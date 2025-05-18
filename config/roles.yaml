@@ -1,0 +1,23 @@
+roles:
+  ArchTechnomancer:
+    module: agents.arch
+    class: ArchTechnomancer
+    description: "Orchestrator that plans milestones and controls costs."
+    tools:
+      - web.search
+  HighTechnomancer-Engineering:
+    module: agents.high_engineering
+    class: HighTechnomancerEngineering
+    description: "Engineering lead that breaks epics into tickets and reviews code."
+    tools: []
+  HighTechnomancer-QA:
+    module: agents.high_qa
+    class: HighTechnomancerQA
+    description: "QA lead that stubs tests and ensures quality."
+    tools: []
+  Technomancer-Code:
+    module: agents.technomancer_code
+    class: TechnomancerCode
+    description: "Worker agent that writes/modifies code."
+    tools:
+      - cost_tracker

@@ -1,2 +1,42 @@
-# virtual_technomancy_conclave
-A fun project for building a virtual computer science department
+# Virtual Technomancy Conclave
+
+Self-organizing hierarchy of LLM agents (Technomancers) that plan, code, test, document, and ship features with minimal human intervention.
+
+## Installation
+
+Requires Python 3.12. Install dependencies:
+```bash
+pip install openai>=1.15 pydantic pytest
+```
+
+## Usage
+
+```bash
+python main.py "<goal>"
+```
+
+## Testing
+
+```bash
+pytest -q
+```
+
+## Project Structure
+
+- agents/: Agent classes
+  - base.py: Base agent classes and utilities
+  - arch.py: ArchTechnomancer orchestrator
+  - high_*.py: HighTechnomancer leads
+  - technomancer_*.py: Technomancer worker agents
+- services/: Memory store and search tool wrappers
+- tools/: Token and cost tracking utilities
+- tests/: Unit tests and bootstrap tests
+- docs/: Documentation including milestones and governance
+- config/: YAML configuration for roles, guardrails, and project manifest
+- main.py: CLI entrypoint
+
+## Contributing
+
+- Every PR must include or update a test in `tests/` and pass `pytest -q`.
+- No network egress during test runs.
+- See docs/GOVERNANCE.md for governance and contribution guidelines.

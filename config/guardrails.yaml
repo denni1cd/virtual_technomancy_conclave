@@ -1,0 +1,12 @@
+python_version: "3.12"
+forbidden_frameworks:
+  - LangChain
+  - LlamaIndex
+  - Semantic Kernel
+allowed_dependencies:
+  - openai>=1.15
+  - pydantic
+  - pytest
+network:
+  internet_access: ArchTechnomancer.web.search
+  tests_network_egress: false

@@ -1,0 +1,5 @@
+project:
+  name: "Virtual Technomancy Conclave"
+  version: "0.1.0"
+  description: "Self-organizing hierarchy of LLM agents for end-to-end feature delivery."
+  entrypoint: "main.py"
