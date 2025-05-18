@@ -1,12 +1,107 @@
-python_version: "3.12"
-forbidden_frameworks:
-  - LangChain
-  - LlamaIndex
-  - Semantic Kernel
-allowed_dependencies:
-  - openai>=1.15
-  - pydantic
-  - pytest
+# Guardrails configuration for the Virtual Technomancy Conclave
+
+# -------------------------------------------------------------------
+
+version: 1
+python\_version: "3.12"
+
+# Runtime and dependency constraints ensure the Conclave remains lean
+
+forbidden\_frameworks:
+
+* LangChain
+* LlamaIndex
+* Semantic Kernel
+  allowed\_dependencies:
+* openai>=1.15
+* pydantic
+* pytest
+
+# -------------------------------------------------------------------
+
+# GLOBAL LIMITS  – applied to *every* agent unless a role-level override
+
+# is declared below.
+
+# -------------------------------------------------------------------
+
+global:
+
+# Hard dollar cap (USD) on total token spend per *run* of the Conclave.
+
+max\_cost\_usd: 50
+
+# Optional global token cap (across prompt + completion)
+
+max\_tokens: 200\_000
+
+# Optional maximum recursion depth (how many nested hand‑offs are allowed)
+
+max\_recursion\_depth: 5
+
+# -------------------------------------------------------------------
+
+# NETWORK POLICY
+
+# -------------------------------------------------------------------
+
 network:
-  internet_access: ArchTechnomancer.web.search
-  tests_network_egress: false
+internet\_access: ArchTechnomancer.web.search   # Sole entry point to the web
+tests\_network\_egress: false                   # CI runs stay fully offline
+
+# -------------------------------------------------------------------
+
+# ROLE-LEVEL LIMITS – override `global` for specific ranks.
+
+# -------------------------------------------------------------------
+
+roles:
+ArchTechnomancer:
+max\_cost\_usd: 50        # Full budget authority
+max\_tokens: 100\_000
+tools\_allowed:
+\- web.search          # Only Arch may invoke external search
+\- file.write          # e.g., commit to repo via Roo
+
+HighTechnomancer:
+max\_cost\_usd: 25
+max\_tokens: 50\_000
+tools\_allowed:
+\- file.write
+
+Technomancer:
+max\_cost\_usd: 10
+max\_tokens: 25\_000
+tools\_allowed:
+\- file.write
+
+ApprenticeTechnomancer:
+max\_cost\_usd: 5
+max\_tokens: 5\_000
+tools\_allowed:
+\- file.write
+
+# -------------------------------------------------------------------
+
+# TOOL‑LEVEL RESTRICTIONS – fine‑grained controls.
+
+# -------------------------------------------------------------------
+
+tools:
+web.search:
+allowed\_roles:
+\- ArchTechnomancer
+daily\_quota: 20   # Max external searches per 24‑h wall‑clock period
+
+# -------------------------------------------------------------------
+
+# LOGGING & ENFORCEMENT
+
+# -------------------------------------------------------------------
+
+logging:
+enabled: true
+cost\_log\_path: "logs/cost\_usage.jsonl"  # Path is relative to repo root
+detailed\_trace: false                    # Set true to log every completion payload
+
+action\_on\_violation: "raise"  # Options: "raise", "warn", "noop"
