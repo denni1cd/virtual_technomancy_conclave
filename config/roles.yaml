@@ -1,23 +1,57 @@
 roles:
+  # ───────────────────────────────── Arch ──────────────────────────────────
   ArchTechnomancer:
     module: agents.arch
     class: ArchTechnomancer
-    description: "Orchestrator that plans milestones and controls costs."
+    description: "Orchestrator that plans milestones, spawns sub-agents, and controls costs."
     tools:
-      - web.search
+      - web.search         # internet access reserved for the Arch
+    limits:
+      max_cost_usd: 50     # pulled from guardrails.yaml default
+      max_tokens: 200_000  # generous; adjust later
+
+  # ───────────────────────────── High Technomancers ────────────────────────
   HighTechnomancer-Engineering:
     module: agents.high_engineering
     class: HighTechnomancerEngineering
-    description: "Engineering lead that breaks epics into tickets and reviews code."
+    description: "Engineering lead that decomposes epics and reviews PRs."
     tools: []
+    limits:
+      max_cost_usd: 15
+      max_tokens: 50_000
+
   HighTechnomancer-QA:
     module: agents.high_qa
     class: HighTechnomancerQA
-    description: "QA lead that stubs tests and ensures quality."
+    description: "QA lead that designs test matrices and blocks merges if they fail."
     tools: []
-  Technomancer-Code:
-    module: agents.technomancer_code
-    class: TechnomancerCode
-    description: "Worker agent that writes/modifies code."
+    limits:
+      max_cost_usd: 10
+      max_tokens: 40_000
+
+  # ────────────────────────────── Worker Templates ────────────────────────
+  TechnomancerTemplate:
+    module: agents.technomancer_generic   # factory fills this in
+    class: Technomancer
+    description: "Hands-on builder for {expertise}; writes code and passes tests."
     tools:
       - cost_tracker
+    limits:
+      max_cost_usd: 5
+      max_tokens: 20_000
+    parameters:
+      expertise: ""            # Arch fills with e.g. 'Docs' or 'DevOps'
+      memory_scope: "epic"     # options: 'epic', 'milestone', 'global'
+
+  ApprenticeTechnomancerTemplate:
+    module: agents.apprentice_generic
+    class: ApprenticeTechnomancer
+    description: "Junior fixer for {expertise}; handles lint, small bugs, asks clarifying questions."
+    tools:
+      - cost_tracker
+    limits:
+      max_cost_usd: 1
+      max_tokens: 5_000
+    parameters:
+      expertise: ""
+      memory_scope: "ticket"
