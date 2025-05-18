@@ -1,107 +1,75 @@
 # Guardrails configuration for the Virtual Technomancy Conclave
-
-# -------------------------------------------------------------------
+# SPDX-License-Identifier: MIT
+# ---------------------------------------------------------------------------
 
 version: 1
-python\_version: "3.12"
+python_version: "3.12"
 
-# Runtime and dependency constraints ensure the Conclave remains lean
+runtime:
+  forbidden_frameworks:
+    - LangChain
+    - LlamaIndex
+    - Semantic Kernel
+  allowed_dependencies:
+    - openai>=1.15
+    - pydantic
+    - pytest
 
-forbidden\_frameworks:
-
-* LangChain
-* LlamaIndex
-* Semantic Kernel
-  allowed\_dependencies:
-* openai>=1.15
-* pydantic
-* pytest
-
-# -------------------------------------------------------------------
-
-# GLOBAL LIMITS  – applied to *every* agent unless a role-level override
-
-# is declared below.
-
-# -------------------------------------------------------------------
-
+# ---------------------------------------------------------------------------
+# GLOBAL (repo-wide) LIMITS
+# ---------------------------------------------------------------------------
 global:
+  max_cost_usd: 50          # Hard dollar cap on a single Conclave run
+  max_tokens: 200_000       # Optional aggregate token ceiling
+  max_recursion_depth: 5    # Optional safety stop for agent ↔ agent loops
 
-# Hard dollar cap (USD) on total token spend per *run* of the Conclave.
-
-max\_cost\_usd: 50
-
-# Optional global token cap (across prompt + completion)
-
-max\_tokens: 200\_000
-
-# Optional maximum recursion depth (how many nested hand‑offs are allowed)
-
-max\_recursion\_depth: 5
-
-# -------------------------------------------------------------------
-
+# ---------------------------------------------------------------------------
 # NETWORK POLICY
-
-# -------------------------------------------------------------------
-
+# ---------------------------------------------------------------------------
 network:
-internet\_access: ArchTechnomancer.web.search   # Sole entry point to the web
-tests\_network\_egress: false                   # CI runs stay fully offline
+  internet_access: ArchTechnomancer.web.search   # Only the Arch may query the web
+  tests_network_egress: false                    # CI must stay offline
 
-# -------------------------------------------------------------------
-
-# ROLE-LEVEL LIMITS – override `global` for specific ranks.
-
-# -------------------------------------------------------------------
-
+# ---------------------------------------------------------------------------
+# ROLE-LEVEL LIMITS (override `global`)
+# ---------------------------------------------------------------------------
 roles:
-ArchTechnomancer:
-max\_cost\_usd: 50        # Full budget authority
-max\_tokens: 100\_000
-tools\_allowed:
-\- web.search          # Only Arch may invoke external search
-\- file.write          # e.g., commit to repo via Roo
+  ArchTechnomancer:
+    max_cost_usd: 50
+    max_tokens: 100_000
+    tools_allowed:
+      - web.search
+      - file.write
+  HighTechnomancer:
+    max_cost_usd: 25
+    max_tokens: 50_000
+    tools_allowed:
+      - file.write
+  Technomancer:
+    max_cost_usd: 10
+    max_tokens: 25_000
+    tools_allowed:
+      - file.write
+  ApprenticeTechnomancer:
+    max_cost_usd: 5
+    max_tokens: 5_000
+    tools_allowed:
+      - file.write
 
-HighTechnomancer:
-max\_cost\_usd: 25
-max\_tokens: 50\_000
-tools\_allowed:
-\- file.write
-
-Technomancer:
-max\_cost\_usd: 10
-max\_tokens: 25\_000
-tools\_allowed:
-\- file.write
-
-ApprenticeTechnomancer:
-max\_cost\_usd: 5
-max\_tokens: 5\_000
-tools\_allowed:
-\- file.write
-
-# -------------------------------------------------------------------
-
-# TOOL‑LEVEL RESTRICTIONS – fine‑grained controls.
-
-# -------------------------------------------------------------------
-
+# ---------------------------------------------------------------------------
+# TOOL-LEVEL RESTRICTIONS
+# ---------------------------------------------------------------------------
 tools:
-web.search:
-allowed\_roles:
-\- ArchTechnomancer
-daily\_quota: 20   # Max external searches per 24‑h wall‑clock period
+  web.search:
+    allowed_roles:
+      - ArchTechnomancer
+    daily_quota: 20  # Max external searches per 24 h
 
-# -------------------------------------------------------------------
-
-# LOGGING & ENFORCEMENT
-
-# -------------------------------------------------------------------
-
+# ---------------------------------------------------------------------------
+# LOGGING
+# ---------------------------------------------------------------------------
 logging:
-enabled: true
-cost\_log\_path: "logs/cost\_usage.jsonl"  # Path is relative to repo root
-detailed\_trace: false                    # Set true to log every completion payload
-
-action\_on\_violation: "raise"  # Options: "raise", "warn", "noop"
+  enabled: true
+  cost_log_path: "logs/cost_usage.jsonl"
+  detailed_trace: false           # Set true to dump every completion payload
+  action_on_violation: "raise"    # Options: raise | warn | noop

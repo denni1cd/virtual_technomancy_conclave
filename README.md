@@ -40,3 +40,17 @@ pytest -q
 - Every PR must include or update a test in `tests/` and pass `pytest -q`.
 - No network egress during test runs.
 - See docs/GOVERNANCE.md for governance and contribution guidelines.
+
+## Cost Tracking & Guardrails
+
+The Conclave tracks token and cost usage per role, enforcing a default cap of $50 USD per run. Limits can be customized in `config/guardrails.yaml` under the `global` and `roles` sections:
+
+```yaml
+global:
+  max_cost_usd: 50
+
+roles:
+  ArchTechnomancer:
+    max_cost_usd: 50
+    max_tokens: 100000
+```
