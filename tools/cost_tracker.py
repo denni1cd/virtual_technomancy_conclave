@@ -4,23 +4,13 @@
 
 import json
 from pathlib import Path
-import yaml
+from config.loader import load_guardrails, load_roles
 
 class CostCapExceeded(Exception):
   """Raised when a cost or token cap is exceeded."""
   pass
 
-def load_limits() -> dict:
-  """Load cost and token limits from config/guardrails.yaml.
-
-  Returns:
-    A dict with 'global' and 'roles' keys mapping to their respective limits.
-  """
-  config_path = Path(__file__).parent.parent / "config" / "guardrails.yaml"
-  data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-  global_limits = data.get("global", {})
-  roles = data.get("roles", {})
-  return {"global": global_limits, "roles": roles}
+# Removed load_limits(): using typed configuration loader instead
 
 class Ledger:
   """Ledger for recording and summarizing usage per role."""
@@ -63,7 +53,8 @@ def enforce_cost(role_name: str):
   """
   def decorator(fn):
     def wrapper(*args, **kwargs):
-      limits = load_limits()
+      gconf = load_guardrails()
+      rconf = load_roles()
       resp = fn(*args, **kwargs)
       usage = resp.get("usage", {})
       tokens = usage.get("total_tokens", 0)
@@ -71,23 +62,31 @@ def enforce_cost(role_name: str):
       ledger = Ledger()
       ledger.record(role_name, tokens, cost_usd)
       totals = ledger.totals(role_name)
-      role_limits = limits.get("roles", {}).get(role_name, {})
-      max_cost = role_limits.get("max_cost_usd", limits["global"].get("max_cost_usd"))
-      max_tokens = role_limits.get("max_tokens", limits["global"].get("max_tokens"))
-      if ((max_cost is not None and totals["cost_usd"] > max_cost) or
-          (max_tokens is not None and totals["tokens"] > max_tokens)):
+      # Determine max limits
+      global_max_cost = gconf.global_.max_cost_usd
+      global_max_tokens = gconf.global_.max_tokens
+      role_conf = rconf.get(role_name)
+      role_max_cost = (role_conf.limits.max_cost_usd
+                       if role_conf and role_conf.limits and role_conf.limits.max_cost_usd is not None
+                       else global_max_cost)
+      role_max_tokens = (role_conf.limits.max_tokens
+                         if role_conf and role_conf.limits and role_conf.limits.max_tokens is not None
+                         else global_max_tokens)
+      if ((role_max_cost is not None and totals["cost_usd"] > role_max_cost) or
+          (role_max_tokens is not None and totals["tokens"] > role_max_tokens)):
         raise CostCapExceeded(
-          f"Role '{role_name}' exceeded limits: tokens={totals['tokens']} (max {max_tokens}), "
-          f"cost_usd={totals['cost_usd']:.6f} (max {max_cost})"
+          f"Role '{role_name}' exceeded limits: tokens={totals['tokens']} (max {role_max_tokens}), "
+          f"cost_usd={totals['cost_usd']:.6f} (max {role_max_cost})"
         )
       return resp
     return wrapper
   return decorator
 
 if __name__ == "__main__":
-  limits = load_limits()
+  gconf = load_guardrails()
+  rconf = load_roles()
   ledger = Ledger()
   print("Current usage per role:")
-  for role in limits.get("roles", {}):
+  for role in rconf:
     t = ledger.totals(role)
     print(f"{role}: tokens={t['tokens']}, cost_usd={t['cost_usd']:.6f}")

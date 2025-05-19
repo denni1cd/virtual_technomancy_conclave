@@ -33,6 +33,7 @@ pytest -q
 - tests/: Unit tests and bootstrap tests
 - docs/: Documentation including milestones and governance
 - config/: YAML configuration for roles, guardrails, and project manifest
+- config/loader.py: Typed loader for guardrails.yaml and roles.yaml (pydantic validation, caching)
 - main.py: CLI entrypoint
 
 ## Contributing

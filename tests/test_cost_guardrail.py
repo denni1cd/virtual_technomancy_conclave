@@ -7,6 +7,7 @@ import pytest
 import importlib
 from pathlib import Path
 import tools.cost_tracker as ct
+from types import SimpleNamespace
 
 def setup_function(function):
   """Reload the cost_tracker module before each test."""
@@ -20,7 +21,8 @@ def test_under_cap(tmp_path, monkeypatch):
     "global": {"max_cost_usd": 1000, "max_tokens": 1000000},
     "roles": {"TestRole": {"max_cost_usd": 1000, "max_tokens": 1000000}}
   }
-  monkeypatch.setattr(ct, "load_limits", lambda: limits)
+  monkeypatch.setattr(ct, "load_guardrails", lambda: SimpleNamespace(global_=SimpleNamespace(max_cost_usd=limits["global"]["max_cost_usd"], max_tokens=limits["global"]["max_tokens"])))
+  monkeypatch.setattr(ct, "load_roles", lambda: {"TestRole": SimpleNamespace(limits=SimpleNamespace(max_cost_usd=limits["roles"]["TestRole"]["max_cost_usd"], max_tokens=limits["roles"]["TestRole"]["max_tokens"]))})
   @ct.enforce_cost("TestRole")
   def dummy_call():
     return {"usage": {"total_tokens": 100}}
@@ -40,7 +42,8 @@ def test_over_cap(tmp_path, monkeypatch):
     "global": {"max_cost_usd": 0.0005, "max_tokens": 10},
     "roles": {"TestRole": {"max_cost_usd": 0.0005, "max_tokens": 10}}
   }
-  monkeypatch.setattr(ct, "load_limits", lambda: limits)
+  monkeypatch.setattr(ct, "load_guardrails", lambda: SimpleNamespace(global_=SimpleNamespace(max_cost_usd=limits["global"]["max_cost_usd"], max_tokens=limits["global"]["max_tokens"])))
+  monkeypatch.setattr(ct, "load_roles", lambda: {"TestRole": SimpleNamespace(limits=SimpleNamespace(max_cost_usd=limits["roles"]["TestRole"]["max_cost_usd"], max_tokens=limits["roles"]["TestRole"]["max_tokens"]))})
   @ct.enforce_cost("TestRole")
   def dummy_call():
     return {"usage": {"total_tokens": 100}}
