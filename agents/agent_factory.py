@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 from config import ROLES
 from agents.import_utils import dynamic_import, RoleImportError
+from services.memory import MemoryStore
 import logging
 
 class AgentFactoryError(Exception):

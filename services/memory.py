@@ -5,8 +5,10 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List
 
+
 class MemoryStore:
     """Simple JSONL short-term memory with file rotation."""
+
     def __init__(self, path: Path, max_size: int = 10000):
         """
         Args:
@@ -17,6 +19,9 @@ class MemoryStore:
         self.max_size = max_size
         self._ensure_file()
 
+    # --------------------------------------------------------------------- #
+    # Internal helpers
+    # --------------------------------------------------------------------- #
     def _ensure_file(self):
         """Ensure the memory file exists."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -28,6 +33,9 @@ class MemoryStore:
         content = self.path.read_text(encoding="utf-8")
         return [line for line in content.splitlines() if line.strip()]
 
+    # --------------------------------------------------------------------- #
+    # Public API
+    # --------------------------------------------------------------------- #
     def add(self, entry: Dict[str, Any]):
         """Add an entry to memory, rotating file if necessary."""
         lines = self._read_lines()
