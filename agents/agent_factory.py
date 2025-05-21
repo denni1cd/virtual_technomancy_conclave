@@ -4,9 +4,11 @@ from agents.import_utils import dynamic_import, RoleImportError
 from services.memory import MemoryStore
 import logging
 
+
 class AgentFactoryError(Exception):
     """Raised when an agent cannot be created."""
     pass
+
 
 class AgentFactory:
     """Factory for creating agent instances based on roles.yaml configuration."""
@@ -32,6 +34,7 @@ class AgentFactory:
             return cls(**kwargs)
         else:
             return cls()
+
 
 # Initialize logger
 logging.getLogger(__name__).info(
