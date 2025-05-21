@@ -57,7 +57,8 @@ class MemoryStore:
     @classmethod
     def for_agent(cls, name: str, scope: str = "epic") -> "MemoryStore":
         """Quick factory that builds a scoped file for an agent."""
-        file_path = _BASE_DIR / f"{name}_{scope}.jsonl"
+        base_dir = Path(os.getenv("CONCLAVE_HOME", Path.home())) / ".conclave_memory"
+        file_path = base_dir / f"{name}_{scope}.jsonl"
         return cls(file_path)
 
     # ------------------------------------------------------------------ #

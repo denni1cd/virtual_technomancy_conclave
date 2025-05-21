@@ -55,10 +55,31 @@ class AgentFactory:
         # 1 – lookup role config
         try:
             rc = ROLES[role_name]
-        except KeyError as exc:
+        except KeyError:
+            # Handle template roles (e.g., Technomancer-Docs)
+            for template_name, template_rc in ROLES.items():
+                params = getattr(template_rc, "parameters", None)
+                if not params:
+                    continue
+                base = template_name
+                if base.endswith("Template"):
+                    base = base[:-len("Template")]
+                if role_name.startswith(f"{base}-"):
+                    try:
+                        cls = dynamic_import(template_rc.module, template_rc.class_name)
+                    except RoleImportError as exc2:
+                        raise AgentFactoryError(
+                            f"Failed to import class for template role '{role_name}': {exc2}"
+                        ) from exc2
+                    expertise = role_name[len(base) + 1:]
+                    memory_scope = kwargs.get("memory_scope", params.get("memory_scope"))
+                    instance = cls(expertise=expertise, memory_scope=memory_scope)
+                    instance.memory = MemoryStore.for_agent(role_name, memory_scope)
+                    return instance
+            # no matching template found
             raise AgentFactoryError(
                 f"Role '{role_name}' not found in configuration"
-            ) from exc
+            )
 
         # 2 – import class dynamically
         try:
@@ -80,9 +101,13 @@ class AgentFactory:
         else:
             instance = cls()
 
-        # 4 – (optional) attach per-agent memory (example shown, not yet used)
-        # instance.memory = MemoryStore.for_agent(role_name, "epic")
-
+        # 4 – attach per-agent memory
+        params = getattr(rc, "parameters", None)
+        if params:
+            memory_scope = kwargs.get("memory_scope", params.get("memory_scope"))
+            instance.memory = MemoryStore.for_agent(role_name, memory_scope)
+        else:
+            instance.memory = MemoryStore.for_agent(role_name)
         return instance
 
 
