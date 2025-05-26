@@ -70,3 +70,19 @@ class TechnomancerBase:
             completion=completion_tokens,
             total=self.tokens_used,
         )
+    # ------------------------------------------------------------------ #
+    # Tracing helper ---------------------------------------------------- #
+    def _finish_run(self, run) -> None:
+        """
+        Call after each Runner.run(); logs tokens & prints trace URL.
+        """
+        usage = getattr(run, "usage", None)
+        if usage:
+            self._log_cost(
+                prompt_tokens=getattr(usage, "prompt_tokens", 0),
+                completion_tokens=getattr(usage, "completion_tokens", 0),
+            )
+
+        # surface trace link (no-op if key missing)
+        from conclave.services.trace_utils import print_trace_url
+        print_trace_url(run)

@@ -75,6 +75,12 @@ class AgentFactory:
         # freeze – callers can read but not mutate
         self.registry = MappingProxyType(self.registry)
 
+    # -------------------- convenience helpers -------------------- #
+    def spawn_one_high_with_one_technomancer(self):
+        """Utility for smoke-tests: returns (high, tech)."""
+        high = self.spawn("HighTechnomancer")
+        tech = self.spawn("Technomancer")
+        return high, tech
 
 # convenience singleton
 factory = AgentFactory()
