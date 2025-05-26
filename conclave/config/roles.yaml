@@ -1,0 +1,33 @@
+ArchTechnomancer:
+  prompt: >
+    You are the ArchTechnomancer – approve only final milestones and arbitrate
+    irreconcilable conflicts.
+  rank: 0
+  cost_cap_usd: 50
+  token_cap: 200000
+  debate_rounds: 0  # usually none; does final review
+
+HighTechnomancer:
+  prompt: >
+    You own one milestone; plan tasks; spawn Technomancers; run debate +
+    integration tests, then forward to Arch.
+  rank: 1
+  cost_cap_usd: 25
+  token_cap: 50000
+  debate_rounds: 3
+
+Technomancer:
+  prompt: >
+    Implement code; self-review; call Apprentices for lint / refactor.
+  rank: 2
+  cost_cap_usd: 10
+  token_cap: 25000
+  debate_rounds: 2
+
+Apprentice:
+  prompt: >
+    Provide unit tests, quick refactors, and linting help.
+  rank: 3
+  cost_cap_usd: 5
+  token_cap: 5000
+  debate_rounds: 0
