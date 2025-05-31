@@ -17,7 +17,7 @@ Portalocker lock so concurrent processes can append safely.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from pathlib import Path
 from typing import Any, Dict, Union
 
@@ -36,7 +36,7 @@ _TOKEN_PRICE = float(1) / 100_000
 def _iso_z(dt: datetime) -> str:
     """Return ISO-8601 UTC timestamp with trailing “Z” (Zulu)."""
     # Datetime → ISO then swap +00:00 for Z ﻿:contentReference[oaicite:2]{index=2}
-    return dt.astimezone(timezone.utc).isoformat(timespec="seconds").replace(
+    return dt.astimezone(UTC).isoformat(timespec="seconds").replace(
         "+00:00", "Z"
     )
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Any, Dict
 
 # A stub import; the real ledger will arrive in T4.
@@ -30,7 +30,7 @@ class TechnomancerBase:
             setattr(self, key, val)
 
         # minimal runtime state
-        self.created_at: datetime = datetime.utcnow()
+        self.created_at: datetime = datetime.now(UTC)
         self.tokens_used: int = 0
 
     # ------------------------------------------------------------------ #
