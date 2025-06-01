@@ -56,7 +56,7 @@ def log_usage(
     `extra` lets callers stash custom fields later (e.g. tool name).
     """
     record: Dict[str, Any] = {
-        "ts": _iso_z(datetime.utcnow()),
+        "ts": _iso_z(datetime.now(UTC)),
         "agent": agent,
         "prompt_tokens": prompt,
         "completion_tokens": completion,
