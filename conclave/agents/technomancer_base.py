@@ -6,6 +6,8 @@ from typing import Any, Dict
 # A stub import; the real ledger will arrive in T4.
 try:
     from conclave.services.cost_ledger import log_usage  # pragma: no cover
+    from conclave.services.cost_ledger import log_usage, CostCapExceeded
+
 except ModuleNotFoundError:  # during early sprints
     def log_usage(*_, **__):  # type: ignore
         """No-op until cost_ledger.py is implemented."""
@@ -56,20 +58,26 @@ class TechnomancerBase:
     # ------------------------------------------------------------------ #
     # Helpers
     # ------------------------------------------------------------------ #
-    def _log_cost(self, prompt_tokens: int, completion_tokens: int) -> None:
+    # ------------------------------------------------------------------ #
+    # Cost logging helper ---------------------------------------------- #
+    def _log_cost(self, *, prompt_tokens: int, completion_tokens: int) -> None:
         """
-        Dispatch a single line to the shared ledger.
+        Send a single usage record to the shared ledger.
 
-        The OpenAI Agents SDK exposes `usage.total_tokens` per run; we’ll
-        feed those numbers in a later sprint.
+        Computes total and passes the correct role name so the new
+        hard-cap logic works.
         """
-        self.tokens_used += prompt_tokens + completion_tokens
+        from conclave.services.cost_ledger import log_usage
+
+        total = prompt_tokens + completion_tokens
         log_usage(
             agent=self.role_name,
+            role_name=self.__class__.__name__.replace("Conclave", ""),
             prompt=prompt_tokens,
             completion=completion_tokens,
-            total=self.tokens_used,
+            total=total,
         )
+
     # ------------------------------------------------------------------ #
     # Tracing helper ---------------------------------------------------- #
     def _finish_run(self, run) -> None:
@@ -78,9 +86,11 @@ class TechnomancerBase:
         """
         usage = getattr(run, "usage", None)
         if usage:
+            prompt = getattr(usage, "prompt_tokens", 0)
+            completion = getattr(usage, "completion_tokens", 0)
             self._log_cost(
-                prompt_tokens=getattr(usage, "prompt_tokens", 0),
-                completion_tokens=getattr(usage, "completion_tokens", 0),
+                prompt_tokens=prompt,
+                completion_tokens=completion,
             )
 
         # surface trace link (no-op if key missing)
