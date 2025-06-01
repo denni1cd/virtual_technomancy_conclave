@@ -2,6 +2,8 @@
 Test the peer_chat() helper with an in-memory FastAPI A2A server.
 """
 
+import pytest                 # ← new
+
 import requests
 from fastapi.testclient import TestClient
 
