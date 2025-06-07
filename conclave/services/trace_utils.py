@@ -12,20 +12,23 @@ from typing import Any
 
 from dotenv import load_dotenv  # pip install python-dotenv
 
-# Load .env (python-dotenv searches current dir upward until it finds one)
-load_dotenv()   # default search; does nothing if file isn't present :contentReference[oaicite:0]{index=0}
-
 def print_trace_url(run: Any) -> None:
     """
     Accept an AgentRun / Runner result and print its `.trace_url`
     if tracing is active.  If the key is absent, log a short notice.
     """
-    if not os.getenv("OPENAI_API_KEY"):
+    # Try to load from .env file first
+    load_dotenv()
+    
+    # Check for API key in environment
+    key = os.getenv("OPENAI_API_KEY")
+    if not key or key.strip() == "":
         print("[trace] OPENAI_API_KEY not set (is it in your .env?)")  # noqa: T201
         return
 
+    # Only try to access trace_url if we have an API key
     url = getattr(run, "trace_url", None)
-    if url:                                     # normal success path
+    if url:
         print(f"[trace] View trace → {url}")    # noqa: T201
-    else:                                       # tracing was disabled when run executed
+    else:
         print("[trace] run.trace_url missing")  # noqa: T201

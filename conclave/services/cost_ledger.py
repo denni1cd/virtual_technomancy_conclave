@@ -96,3 +96,8 @@ def log_usage(
                 f"{agent} exceeded {role_name} cap "
                 f"({run['tokens']} tkn / ${run['usd']})"
             )
+
+def cost_guard(fn):               # in cost_ledger.py for now
+    async def _inner(*a, **k):    # noqa: D401
+        return await fn(*a, **k)
+    return _inner

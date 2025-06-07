@@ -1,12 +1,13 @@
 from pathlib import Path
-
+import pytest
 from conclave.agents import arch_runner
 from conclave.agents.arch_runner import MilestoneRunner
 
 
+@pytest.mark.timeout(5)  # Force test to timeout after 5 seconds
 def test_failure_replan(tmp_path, monkeypatch):
     """
-    Patch Arch’s workspace/failed paths into a temp dir, force the first
+    Patch Arch's workspace/failed paths into a temp dir, force the first
     test run to fail and the second to pass, and check that a failure
     archive was created.
     """
@@ -17,19 +18,24 @@ def test_failure_replan(tmp_path, monkeypatch):
 
     milestones = [{"goal": "fail-now"}]
 
-    # Make _run_tests fail once, then succeed
-    calls = {"n": 0}
+    # Mock think() method on HighTechnomancer to return immediately
+    def mock_run_milestone(self, issue, tech_count):
+        return "mock decision"
 
-    def fake_tests(self):
+    from conclave.agents.high_behavior import _attach_to
+
+    for cls in arch_runner.factory.registry.values():
+        if "HighTechnomancer" in cls.__name__:
+            monkeypatch.setattr(cls, "run_milestone", mock_run_milestone)
+
+    # Mock subprocess.run to avoid real pytest calls
+    def mock_run_tests(self):
+        # First call fails, second passes
         calls["n"] += 1
-        return calls["n"] == 2  # pass on second call
+        return calls["n"] == 2
 
-    monkeypatch.setattr(
-        arch_runner.MilestoneRunner,
-        "_run_tests",
-        fake_tests,
-        raising=True,
-    )
+    calls = {"n": 0}
+    monkeypatch.setattr(MilestoneRunner, "_run_tests", mock_run_tests)
 
     runner = MilestoneRunner(milestones)
     assert runner.run_next() == "failed"

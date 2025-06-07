@@ -1,98 +1,114 @@
+"""
+Technomancer base-class.
+
+Responsibilities
+----------------
+• Own an OpenAI Agent (via Responses API).
+• Provide `.think(prompt)` that routes through the Agent and logs
+  prompt/completion token usage plus latency.
+• Expose basic metadata (`role_name`, `model`, `created_at`, …).
+
+The hard-cap decorator `@cost_guard` is a no-op stub until T-15.
+"""
+
 from __future__ import annotations
 
+import time
 from datetime import datetime, UTC
-from typing import Any, Dict
+from pathlib import Path
+from typing import Any, Dict, List
 
-# A stub import; the real ledger will arrive in T4.
-try:
-    from conclave.services.cost_ledger import log_usage  # pragma: no cover
-    from conclave.services.cost_ledger import log_usage, CostCapExceeded
+from openai import OpenAI, AsyncOpenAI  # SDK v1.3+
+from pydantic import BaseModel, Field
 
-except ModuleNotFoundError:  # during early sprints
-    def log_usage(*_, **__):  # type: ignore
-        """No-op until cost_ledger.py is implemented."""
-        return None
+from conclave.services.cost_ledger import log_usage, cost_guard
+
+# ---------------------------------------------------------------------------
+_client = AsyncOpenAI()        # picks up OPENAI_API_KEY from env
+# ---------------------------------------------------------------------------
+
+
+class TechnomancerConfig(BaseModel):
+    """Parsed template from roles.yaml (merged at runtime)."""
+    role_name: str
+    model: str = Field(default="gpt-4.1")
+    instructions: str = Field(default="You are a helpful Conclave Technomancer.")
+    tools: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class TechnomancerBase:
     """
-    Shared plumbing every runtime Conclave*Technomancer class inherits.
+    Every runtime agent subclasses this.
 
-    Template attributes (role_prompt, rank, token_cap, …) are injected by
-    AgentFactory via **attrs so the base never hard-codes role specifics.
+    Concrete behaviour is supplied either by HighTechnomancer /
+    ApprenticeTechnomancer subclasses or via the AgentFactory's `type()`
+    dynamic mixins.
     """
 
-    # ------------------------------------------------------------------ #
-    # Construction
-    # ------------------------------------------------------------------ #
-    def __init__(self, *, role_name: str, **attrs: Dict[str, Any]) -> None:
-        self.role_name: str = role_name
-        # copy template-level attrs produced by AgentFactory
-        for key, val in attrs.items():
-            setattr(self, key, val)
+    cfg: TechnomancerConfig                          # set by AgentFactory
 
-        # minimal runtime state
+    def __init__(self, role_name: str, **kwargs) -> None:
         self.created_at: datetime = datetime.now(UTC)
-        self.tokens_used: int = 0
+        self.cfg = TechnomancerConfig(role_name=role_name, **kwargs)
 
-    # ------------------------------------------------------------------ #
-    # Public stubs (filled in later sprints)
-    # ------------------------------------------------------------------ #
-    def think(self, *_, **__) -> str:
+    # ──────────────────────────────────────────────────────────────
+    # Low-level LLM call (Responses API) — guarded for cost caps.
+    # ──────────────────────────────────────────────────────────────
+    @cost_guard
+    async def _call_llm(self, input_text: str, **kw) -> str:
         """
-        Placeholder reasoning loop.
-
-        Returns a fixed string so early tests can assert the method exists
-        without requiring an LLM call.
+        Send *input_text* to the agent and return the assistant’s reply string.
+        kw → forwarded to `responses.create()` (temperature, max_tokens, etc.).
         """
-        return "TODO-think"
+        t0 = time.perf_counter()
 
-    def call_llm(self, *_, **__) -> str:  # noqa: D401
-        """
-        Will wrap an OpenAI Agents-SDK call in T3/T6.
+        # Don't pass history to responses.create()
+        if 'history' in kw:
+            del kw['history']
 
-        We raise for now to ensure tests remind us to implement it.
-        """
-        raise NotImplementedError("call_llm stub — implemented in Phase 3")
-
-    # ------------------------------------------------------------------ #
-    # Helpers
-    # ------------------------------------------------------------------ #
-    # ------------------------------------------------------------------ #
-    # Cost logging helper ---------------------------------------------- #
-    def _log_cost(self, *, prompt_tokens: int, completion_tokens: int) -> None:
-        """
-        Send a single usage record to the shared ledger.
-
-        Computes total and passes the correct role name so the new
-        hard-cap logic works.
-        """
-        from conclave.services.cost_ledger import log_usage
-
-        total = prompt_tokens + completion_tokens
-        log_usage(
-            agent=self.role_name,
-            role_name=self.__class__.__name__.replace("Conclave", ""),
-            prompt=prompt_tokens,
-            completion=completion_tokens,
-            total=total,
+        rsp = await _client.responses.create(
+            model=self.cfg.model,
+            input=input_text,
+            instructions=self.cfg.instructions,
+            tools=self.cfg.tools,
+            **kw,
         )
 
-    # ------------------------------------------------------------------ #
-    # Tracing helper ---------------------------------------------------- #
-    def _finish_run(self, run) -> None:
-        """
-        Call after each Runner.run(); logs tokens & prints trace URL.
-        """
-        usage = getattr(run, "usage", None)
-        if usage:
-            prompt = getattr(usage, "prompt_tokens", 0)
-            completion = getattr(usage, "completion_tokens", 0)
-            self._log_cost(
-                prompt_tokens=prompt,
-                completion_tokens=completion,
-            )
+        latency = time.perf_counter() - t0
+        # New OpenAI API uses different token count keys
+        usage = rsp.usage.model_dump()
+        prompt_tokens = usage.get('input_tokens', 0)
+        completion_tokens = usage.get('output_tokens', 0)
 
-        # surface trace link (no-op if key missing)
-        from conclave.services.trace_utils import print_trace_url
-        print_trace_url(run)
+        log_usage(
+            agent=self.cfg.role_name,
+            role_name=self.cfg.role_name,
+            prompt=prompt_tokens,
+            completion=completion_tokens,
+            total=prompt_tokens + completion_tokens
+        )
+        return rsp.output_text
+
+    # ──────────────────────────────────────────────────────────────
+    # Public helper every subclass calls
+    # ──────────────────────────────────────────────────────────────
+    async def think(self, prompt: str, **kw) -> str:
+        """
+        High-level helper: send *prompt* to the LLM and return the answer.
+        Additional kwargs bubble down to `_call_llm()`.
+        """
+        return await self._call_llm(prompt, **kw)
+
+    def _log_cost(self, prompt_tokens: int, completion_tokens: int) -> None:
+        """For cost-cap test."""
+        log_usage(
+            agent=self.cfg.role_name,
+            role_name=self.cfg.role_name,
+            prompt=prompt_tokens,
+            completion=completion_tokens,
+            total=prompt_tokens + completion_tokens
+        )
+
+    # conventional __repr__ for debugging
+    def __repr__(self) -> str:  # noqa: D401
+        return f"<{self.cfg.role_name} model={self.cfg.model!s}>"

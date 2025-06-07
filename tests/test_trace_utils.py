@@ -26,7 +26,14 @@ def test_trace_url_prints_when_key_present(monkeypatch, capsys):
 
 def test_notice_prints_when_key_missing(monkeypatch, capsys):
     """If the key is missing, helper should warn and NOT raise."""
+    # Remove the env var if it exists
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    
+    # Mock load_dotenv to do nothing (simulating no .env file found)
+    def mock_load_dotenv(*args, **kwargs):
+        return False
+    monkeypatch.setattr("dotenv.load_dotenv", mock_load_dotenv)
+    
     importlib.reload(trace_utils)  # reload with key absent
 
     run = types.SimpleNamespace(trace_url="https://example.com/trace/xyz")
