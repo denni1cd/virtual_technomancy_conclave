@@ -1,11 +1,20 @@
-"""
-Ensure the project root (this file’s parent directory) is on sys.path
-so `import conclave ...` works regardless of where pytest is invoked.
-"""
+# tests/conftest.py
+import pytest
+import pytest_asyncio
+import asyncio
 
-import sys
-from pathlib import Path
+@pytest.fixture(scope="function")
+def event_loop():
+    """Create an instance of the default event loop for each test case."""
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
 
-ROOT = Path(__file__).resolve().parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+@pytest.fixture(scope="session")
+def anyio_backend():
+    """Use asyncio backend for async tests."""
+    return "asyncio"
+
+def pytest_configure(config):
+    """Configure test defaults."""
+    config.addinivalue_line("markers", "asyncio: mark test as async")
