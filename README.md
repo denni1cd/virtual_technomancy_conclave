@@ -1,109 +1,137 @@
 # Conclave
 
-Conclave is a **fully‑agentic, cost‑aware software‑engineering swarm** that couples the **OpenAI Agents SDK** for vertical orchestration with Google’s **Agent‑to‑Agent (A2A) protocol** for peer‑to‑peer cross‑talk.
+Conclave is a **fully agentic, cost‑aware software engineering swarm** that couples the **OpenAI Agents SDK** (for vertical orchestration and tool use via the Responses API) with Google’s **Agent‑to‑Agent (A2A) protocol** for horizontal peer‑to‑peer communication.
 
-Phase 1 (complete) scaffolds:
+Phase 1 (complete) scaffolds the foundation:
 
-* dynamic runtime roles
-* cost‑ledger & guardrails
-* Portalocker‑safe file & search tools
-* tracing hooks to the OpenAI dashboard
-* majority‑vote Debate Manager
-* CLI smoke‑test
-  \* and a 10‑green‑test CI suite
+- dynamic runtime role hierarchy
+- cost‑ledger + configurable guardrails
+- Portalocker‑safe file & search tools
+- OpenAI tracing hooks (via `.env` key)
+- majority‑vote Debate Manager
+- CLI smoke test
+- CI suite with 10 green tests
 
-Phase 2 (road‑mapped) swaps stubs for real model calls, adds A2A messaging, cost‑cap enforcement, and milestone state‑machines to deliver a production‑grade dev collective.
+Phase 2 (in progress) turns this into a real swarm:
+- real model calls via **OpenAI Agents SDK + Responses API**
+- A2A peer messaging via FastAPI
+- enforcement of cost caps
+- milestone state machine with retry/approval cycles
+
+---
+
+## Project Summary
+
+Conclave is designed as a **hierarchical, autonomous dev team** composed of AI agents called *Technomancers*, governed by a cost ledger, peer communication, and role-specific duties. Each role spawns others as needed, escalating to a **HighTechnomancer** or **ArchTechnomancer** when tasks require orchestration or milestone-wide coordination.
+
+**Agents use the latest OpenAI GPT‑4.1 model**, defaulting to the **Responses API** for tool interaction and reasoning. A2A communication is backed by an SSE/POST protocol, allowing agents to synchronize across processes.
 
 ---
 
 ## Quick Start
 
 ```bash
-# 1 – clone & install
-$ git clone https://github.com/your‑org/conclave.git
+# 1 – clone & install
+$ git clone https://github.com/your-org/conclave.git
 $ cd conclave
 $ conda create -n conclave python=3.12 -y && conda activate conclave
-$ pip install -r requirements.txt   # portalocker, python‑dotenv, pytest
+$ pip install -r requirements.txt   # portalocker, python-dotenv, pytest, httpx
 
-# 2 – create a .env with your key
-OPENAI_API_KEY=sk‑...
+# 2 – create a .env with your OpenAI key
+OPENAI_API_KEY=sk-...
 
-# 3 – run tests
-$ pytest -q    # 10 passed
+# 3 – run tests
+$ pytest -q    # All tests should pass
 
-# 4 – smoke demo
+# 4 – smoke demo
 $ python main.py "refactor logging module"
 ```
 
-You will see a debate decision, an artefact in **`workspace/hello.txt`**, a cost ledger line in **`conclave_usage.jsonl`**, and an OpenAI trace link.
+Outputs include:
+- artefacts in `workspace/`
+- JSONL cost ledger at `conclave_usage.jsonl`
+- live OpenAI trace link per call
 
 ---
 
-## Directory Layout (Phase 1)
+## Directory Layout (Phase 2+)
 
 ```
 conclave/
-├─ config/            # guardrails.yaml • roles.yaml
-├─ agents/            # technomancer_base.py • agent_factory.py
-├─ tools/             # file_io.py • web_search.py • peer_chat_a2a.py
-├─ services/          # cost_ledger.py • trace_utils.py
+├─ config/            # guardrails.yaml • roles.yaml
+├─ agents/            # technomancer_base.py • high_technomancer.py • agent_factory.py
+├─ tools/             # file_io.py • web_search.py • peer_chat_a2a.py
+├─ services/          # cost_ledger.py • trace_utils.py • a2a_server.py
 ├─ consensus/         # debate_manager.py
-├─ workspace/         # agent‑generated artefacts
-├─ tests/             # pytest suite (10 tests)
-└─ main.py            # CLI smoke‑test
+├─ workspace/         # generated code & artefacts
+├─ tests/             # 15+ tests for CLI, tools, and agents
+└─ main.py            # CLI entry point
 ```
 
 ---
 
 ## Runtime Role Hierarchy
 
-| Rank                 | Purpose                            | Default Cap      | Debate Rounds |
-| -------------------- | ---------------------------------- | ---------------- | ------------- |
-| **ArchTechnomancer** | Final milestone gate & tie‑breaker | \$50 / 200 k tkn | 0             |
-| **HighTechnomancer** | Own one milestone; spawn Techs     | \$25 / 50 k      | 3             |
-| **Technomancer**     | Implement tasks; spawn Apprentices | \$10 / 25 k      | 2             |
-| **Apprentice**       | Lint, test, refactor               | \$5 / 5 k        | 0             |
+| Role                 | Responsibility                     | Cap ($ / tokens)  | Debate Rounds |
+|----------------------|-------------------------------------|--------------------|---------------|
+| **ArchTechnomancer** | Final milestone gate & retry logic | \$50 / 200 k       | 0             |
+| **HighTechnomancer** | Spawns Technomancers per task      | \$25 / 50 k        | 3             |
+| **Technomancer**     | Implements tasks                   | \$10 / 25 k        | 2             |
+| **Apprentice**       | Refactors, lints, tests            | \$5 / 5 k          | 0             |
 
-All share the same tool bundle; cost caps are enforced in Phase 2.
+Caps are defined in `roles.yaml` and enforced at runtime via the **cost ledger** and upcoming **guard decorators**.
 
 ---
 
 ## Core Features
 
-* **Dynamic roles** – `roles.yaml` → runtime subclasses via `type()`
-* **Portalocker file I/O** – atomic writes & shared‑lock reads
-* **JSONL cost ledger** – race‑safe, advisory‑locked
-* **Tracing hooks** – surfacing `trace_url` per run via `.env` loaded key
-* **Debate Manager** – odd‑agent majority vote converges in ≤3 rounds
+- **OpenAI Agents SDK** – default to GPT‑4.1, use `Responses API` for tool integration  
+- **Function‑calling Tools** – file I/O, search, peer chat exposed as JSON tool schema  
+- **A2A Messaging** – FastAPI server (`/tasks`, `/subscribe`) allows real-time peer sync  
+- **Majority‑Vote Consensus** – odd‑agent majority vote converges on winning task outcome  
+- **Cost Ledger + Guardrails** – safe JSONL ledger with enforcement (in progress)  
+- **CLI Orchestration** – single-line interface to launch multi-agent swarm  
 
 ---
 
-## Phase 2 Roadmap
+## Phase Roadmap
 
-1. **Real LLM Calls** – replace `think()` stubs with Agents‑SDK `Runner.run()` + function‑tool schemas.
-2. **HighTechnomancer Orchestration** – spawn N Technomancers, run debate, merge.
-3. **A2A Peer Chat** – JSON‑RPC `/tasks` & `/messages` for cross‑agent messaging.
-4. **Cost‑Cap Enforcement** – raise `CostCapExceeded` when ledger totals exceed YAML limits.
-5. **Milestone FSM** – Arch approves, rejects, or restarts with lessons‑learned.
-6. **External Tracing** – pipe trace IDs to LangSmith / Langfuse for fleet‑wide observability.
-
----
-
-## Contributing
-
-\* Fork ➜ PR ➜ keep **pytest green**.
-\* Write unit tests for every new module.
-\* Adhere to Black 24.3 & Google docstring style.
-\* Open a GitHub Discussion for major features.
+| Phase                          | Goal                                           | Tasks                                                                                                                                                   |
+|--------------------------------|------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Phase 1 – Foundation**<br>*✅ Complete*       | Build scaffold with core architecture          | ✅ Dynamic Roles<br>✅ Cost Ledger<br>✅ Portalocker I/O<br>✅ Tracing Hooks<br>✅ Debate System<br>✅ CLI & Tests                                                           |
+| **Phase 2 – Production Agents**<br>*🛠 In Progress* | Enable real agents with communication, enforcement, and task workflow | ✅ Real LLM Calls via SDK<br>✅ HighTechnomancer orchestration<br>✅ A2A SSE peer chat<br>🔄 Cost Cap Enforcement<br>🔄 Milestone FSM               |
+| **Phase 3 – Observability & Scaling**<br>*📌 Planned* | Connect external tools and extend capabilities | ⏳ External Tracing (LangSmith)<br>⏳ Multi-host deployments<br>⏳ Plugin scaffolds for human-in-the-loop                                                           |
 
 ---
 
-## License
+## References
 
-MIT — see **LICENSE**.
+- **Project docs**  
+  - [OpenAI Agents SDK docs][agents-sdk] citeturn1news10  
+  - [Responses API tool calling guide][responses-api] citeturn0news73  
 
----
+- **Libraries**  
+  - [portalocker][portalocker] citeturn0search2turn0search9  
+  - [python-dotenv][dotenv] citeturn0search7  
 
-### References
+- **Protocols & Algorithms**  
+  - [Agent2Agent (A2A) Protocol][a2a-protocol] citeturn0search3turn0search10  
+  - [Boyer–Moore majority vote algorithm][bmvote] citeturn0search4  
 
-1. OpenAI Agents SDK tracing docs 2. Responses‑API function‑calling guide 3. Portalocker docs 4. Google A2A spec 5. Boyer‑Moore majority‑vote proof 6. JSONL spec 7. OpenAI rate‑limit FAQ 8. python‑dotenv load order 9. RFC 3339 timestamps 10. LangSmith tracing example
+- **Observability**  
+  - [LangSmith Observability Quickstart][langsmith] citeturn0search5  
+
+- **Standards**  
+  - [RFC 3339 Timestamp Spec][rfc3339]  
+
+- **News**  
+  navlistRecent Newsturn0news73,turn1news10  
+
+[agents-sdk]: https://platform.openai.com/docs/quickstart/add-some-examples  
+[responses-api]: https://platform.openai.com/docs/api-reference/introduction  
+[portalocker]: https://pypi.org/project/portalocker/  
+[dotenv]: https://pypi.org/project/python-dotenv/  
+[a2a-protocol]: https://github.com/google/A2A  
+[bmvote]: https://en.wikipedia.org/wiki/Boyer%E2%80%93Moore_majority_vote_algorithm  
+[langsmith]: https://docs.smith.langchain.com/observability  
+[rfc3339]: https://tools.ietf.org/html/rfc3339  
