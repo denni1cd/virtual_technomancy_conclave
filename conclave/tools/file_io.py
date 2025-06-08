@@ -12,10 +12,13 @@ so Technomancers can call them directly once tool wiring is finished.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Literal
 
 import portalocker  # pip install portalocker
+
+WORKSPACE = Path(os.getenv("CONCLAVE_WORKSPACE", "workspace")).resolve()
 
 # -- internal helpers ---------------------------------------------------- #
 

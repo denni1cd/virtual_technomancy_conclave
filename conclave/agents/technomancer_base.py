@@ -14,14 +14,16 @@ The hard-cap decorator `@cost_guard` is a no-op stub until T-15.
 from __future__ import annotations
 
 import time
+import contextvars
 from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any, Dict, List
+from uuid import uuid4
 
 from openai import OpenAI, AsyncOpenAI  # SDK v1.3+
 from pydantic import BaseModel, Field
 
-from conclave.services.cost_ledger import log_usage, cost_guard
+from conclave.services.cost_ledger import log_usage, cost_guard, _TOKEN_PRICE
 
 # ---------------------------------------------------------------------------
 _client = AsyncOpenAI()        # picks up OPENAI_API_KEY from env
@@ -49,6 +51,8 @@ class TechnomancerBase:
 
     def __init__(self, role_name: str, **kwargs) -> None:
         self.created_at: datetime = datetime.now(UTC)
+        self.agent_id = f"{role_name}_{uuid4().hex[:8]}"
+        contextvars.ContextVar("agent_id").set(self.agent_id)
         self.cfg = TechnomancerConfig(role_name=role_name, **kwargs)
 
     # ──────────────────────────────────────────────────────────────
@@ -57,7 +61,7 @@ class TechnomancerBase:
     @cost_guard
     async def _call_llm(self, input_text: str, **kw) -> str:
         """
-        Send *input_text* to the agent and return the assistant’s reply string.
+        Send *input_text* to the agent and return the assistant's reply string.
         kw → forwarded to `responses.create()` (temperature, max_tokens, etc.).
         """
         t0 = time.perf_counter()
@@ -79,13 +83,16 @@ class TechnomancerBase:
         usage = rsp.usage.model_dump()
         prompt_tokens = usage.get('input_tokens', 0)
         completion_tokens = usage.get('output_tokens', 0)
+        
+        # Calculate cost at $10 per 1M tokens
+        total_tokens = prompt_tokens + completion_tokens
+        cost = total_tokens * _TOKEN_PRICE
 
         log_usage(
-            agent=self.cfg.role_name,
             role_name=self.cfg.role_name,
-            prompt=prompt_tokens,
-            completion=completion_tokens,
-            total=prompt_tokens + completion_tokens
+            agent_id=self.agent_id,  # Using the unique agent_id
+            tokens=total_tokens,
+            cost=cost
         )
         return rsp.output_text
 
@@ -101,14 +108,15 @@ class TechnomancerBase:
 
     def _log_cost(self, prompt_tokens: int, completion_tokens: int) -> None:
         """For cost-cap test."""
+        total_tokens = prompt_tokens + completion_tokens
+        cost = total_tokens * _TOKEN_PRICE
         log_usage(
-            agent=self.cfg.role_name,
             role_name=self.cfg.role_name,
-            prompt=prompt_tokens,
-            completion=completion_tokens,
-            total=prompt_tokens + completion_tokens
+            agent_id=self.agent_id,  # Using the unique agent_id
+            tokens=total_tokens,
+            cost=cost
         )
 
     # conventional __repr__ for debugging
     def __repr__(self) -> str:  # noqa: D401
-        return f"<{self.cfg.role_name} model={self.cfg.model!s}>"
+        return f"<{self.cfg.role_name}_{self.agent_id} model={self.cfg.model!s}>"
