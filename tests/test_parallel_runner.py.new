@@ -8,47 +8,6 @@ import pytest
 from conclave.agents.parallel_runner import ParallelScheduler
 from conclave.services.cost_ledger import CostCapExceeded
 
-# Mock HighTechnomancer implementations
-_executed_goals = []  # Global to track execution order
-
-class MockBaseHigh:
-    def __init__(self, goal): 
-        self.goal = goal
-        
-    def run_milestone(self):
-        sandbox = Path(os.environ["CONCLAVE_WORKSPACE"])
-        (sandbox / "test.txt").write_text("Test content")
-        (sandbox / "src").mkdir(exist_ok=True)
-        (sandbox / "src" / "main.py").write_text("print('test')")
-
-class ExpensiveHigh:
-    def __init__(self, goal): 
-        self.goal = goal
-        
-    def run_milestone(self): 
-        raise CostCapExceeded("Too expensive!")
-
-class DependencyMockHigh:
-    def __init__(self, goal): 
-        self.goal = goal
-        
-    def run_milestone(self):
-        global _executed_goals
-        sandbox = Path(os.environ["CONCLAVE_WORKSPACE"])
-        _executed_goals.append(self.goal)
-        (sandbox / "test.txt").write_text(f"Output from {self.goal}")
-
-class ConflictMergeHigh:
-    def __init__(self, goal):
-        self.goal = goal
-        
-    def run_milestone(self):
-        sandbox = Path(os.environ["CONCLAVE_WORKSPACE"])
-        if "m1" in str(sandbox):
-            (sandbox / "unique_first.txt").write_text("First output")
-        elif "m2" in str(sandbox):
-            (sandbox / "unique_second.txt").write_text("Second output")
-
 def test_sandbox_isolation(tmp_path, monkeypatch):
     """Test that each milestone gets its own isolated workspace."""
     scheduler = ParallelScheduler("dummy.yaml", root_ws=tmp_path)
@@ -69,6 +28,7 @@ def test_parallel_execution(tmp_path, monkeypatch):
         ]
     }
 
+    # Mock graph loader
     class MockGraph:
         def __init__(self):
             self.nodes = test_graph["nodes"]
@@ -95,9 +55,21 @@ def test_parallel_execution(tmp_path, monkeypatch):
     monkeypatch.setattr("conclave.utils.milestone_graph.load_graph", 
                        lambda _: MockGraph())
 
-    monkeypatch.setattr("conclave.agents.parallel_runner.HighTechnomancer", 
-                       MockBaseHigh)
+    # Mock HighTechnomancer
+    class MockHigh:
+        def __init__(self, goal): 
+            self.goal = goal
+            
+        def run_milestone(self):
+            # Use the workspace from environment variable
+            sandbox = Path(os.environ["CONCLAVE_WORKSPACE"])
+            (sandbox / "test.txt").write_text("Test content")
+            (sandbox / "src").mkdir(exist_ok=True)
+            (sandbox / "src" / "main.py").write_text("print('test')")
 
+    monkeypatch.setattr("conclave.agents.parallel_runner.HighTechnomancer", 
+                       MockHigh)
+                       
     monkeypatch.setattr("pytest.main", lambda *args, **kwargs: 0)
 
     workspace = tmp_path / "workspace"
@@ -134,9 +106,17 @@ def test_cost_cap_handling(tmp_path, monkeypatch):
     monkeypatch.setattr("conclave.utils.milestone_graph.load_graph",
                        lambda _: MockGraph())
 
+    # Mock HighTechnomancer to raise CostCapExceeded
+    class ExpensiveHigh:
+        def __init__(self, goal): 
+            self.goal = goal
+            
+        def run_milestone(self): 
+            raise CostCapExceeded("Too expensive!")
+
     monkeypatch.setattr("conclave.agents.parallel_runner.HighTechnomancer",
                        ExpensiveHigh)
-                       
+
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     scheduler = ParallelScheduler("dummy.yaml", root_ws=workspace)
@@ -144,11 +124,7 @@ def test_cost_cap_handling(tmp_path, monkeypatch):
 
 def test_dependency_order(tmp_path, monkeypatch):
     """Test that milestones respect dependency order."""
-    # Reset global execution tracker
-    global _executed_goals
-    _executed_goals = []
-    
-    # Set up config
+    # Create config dir separate from workspace
     config_dir = tmp_path / "config"
     config_dir.mkdir()
     test_yaml = config_dir / "test.yaml"
@@ -162,8 +138,20 @@ def test_dependency_order(tmp_path, monkeypatch):
   dependencies: [auth_module]
 """)
 
+    # Mock HighTechnomancer to track execution order
+    executed = []
+    class MockHigh:
+        def __init__(self, goal): 
+            self.goal = goal
+            
+        def run_milestone(self):
+            # Use the workspace from environment variable
+            sandbox = Path(os.environ["CONCLAVE_WORKSPACE"])
+            executed.append(self.goal)
+            (sandbox / "test.txt").write_text(f"Output from {self.goal}")
+
     monkeypatch.setattr("conclave.agents.parallel_runner.HighTechnomancer", 
-                       DependencyMockHigh)
+                       MockHigh)
     
     monkeypatch.setattr("pytest.main", lambda *args, **kwargs: 0)
     
@@ -173,10 +161,14 @@ def test_dependency_order(tmp_path, monkeypatch):
     scheduler = ParallelScheduler(str(test_yaml), root_ws=workspace)
     scheduler.run_all()
 
-    # Verify correct ordering
-    auth_idx = _executed_goals.index("Implement JWT-based authentication layer.")
-    profile_idx = _executed_goals.index("Add user profile CRUD screens.")
+    # auth_module should be executed before user_profile
+    auth_idx = executed.index("Implement JWT-based authentication layer.")
+    profile_idx = executed.index("Add user profile CRUD screens.")
     assert auth_idx < profile_idx, "Dependencies not respected"
+    
+    # Verify file contents were preserved in order
+    assert (workspace / "test.txt").exists()
+    assert (workspace / "test.txt").read_text() == "Output from Add user profile CRUD screens."
 
 def test_sandbox_merge(tmp_path, monkeypatch):
     """Test that sandbox merging works correctly."""
@@ -204,13 +196,24 @@ def test_sandbox_merge(tmp_path, monkeypatch):
 
     monkeypatch.setattr("conclave.utils.milestone_graph.load_graph", 
                        lambda _: MockGraph())
+
+    class MockHigh:
+        def __init__(self, goal):
+            self.goal = goal
             
+        def run_milestone(self):
+            # Use the workspace from environment variable
+            sandbox = Path(os.environ["CONCLAVE_WORKSPACE"])
+            (sandbox / "test.txt").write_text("Test content")
+            (sandbox / "src").mkdir(exist_ok=True)
+            (sandbox / "src" / "main.py").write_text("print('test')")
+
     monkeypatch.setattr("conclave.agents.parallel_runner.HighTechnomancer",
-                       MockBaseHigh)
+                       MockHigh)
 
     monkeypatch.setattr("pytest.main", lambda *args, **kwargs: 0)
 
-    workspace = tmp_path / "workspace" 
+    workspace = tmp_path / "workspace"
     workspace.mkdir()
     scheduler = ParallelScheduler("dummy.yaml", root_ws=workspace)
     scheduler.run_all()
@@ -219,7 +222,7 @@ def test_sandbox_merge(tmp_path, monkeypatch):
     assert (workspace / "test.txt").exists()
     assert (workspace / "test.txt").read_text() == "Test content"
     assert (workspace / "src" / "main.py").exists()
-    assert (workspace / "src" / "main.py").read_text() == "print('test')"
+    assert (workspace / "src" / "main.py").read_text() == "print('test')")
 
 def test_merge_conflicts(tmp_path, monkeypatch):
     """Test handling of conflicts during sandbox merges."""
@@ -234,10 +237,10 @@ def test_merge_conflicts(tmp_path, monkeypatch):
         def __init__(self):
             self.nodes = test_graph["nodes"]
             self.running = set()
-            self.complete = False
+            self.complete = 0
             
         def incomplete(self):
-            return not self.complete
+            return self.complete < len(self.nodes)
             
         def ready_nodes(self):
             return [n for n in self.nodes if n["id"] not in self.running]
@@ -247,17 +250,28 @@ def test_merge_conflicts(tmp_path, monkeypatch):
             
         def mark_passed(self, mid):
             self.running.remove(mid)
-            if len(self.running) == 0:
-                self.complete = True
-                
+            self.complete += 1
+            
         def mark_failed(self, mid):
             self.running.remove(mid)
 
     monkeypatch.setattr("conclave.utils.milestone_graph.load_graph",
                        lambda _: MockGraph())
 
+    class MockHigh:
+        def __init__(self, goal):
+            self.goal = goal
+            
+        def run_milestone(self):
+            # Use the workspace from environment variable
+            sandbox = Path(os.environ["CONCLAVE_WORKSPACE"])
+            if "m1" in str(sandbox):
+                (sandbox / "unique_first.txt").write_text("First output")
+            elif "m2" in str(sandbox):
+                (sandbox / "unique_second.txt").write_text("Second output")
+
     monkeypatch.setattr("conclave.agents.parallel_runner.HighTechnomancer",
-                       ConflictMergeHigh)
+                       MockHigh)
 
     monkeypatch.setattr("pytest.main", lambda *args, **kwargs: 0)
 

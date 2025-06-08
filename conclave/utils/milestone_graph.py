@@ -1,56 +1,56 @@
-"""Milestone dependency graph utilities."""
+"""Milestone dependency graph utilities using networkx."""
 
 import yaml
+import networkx as nx
 from pathlib import Path
-from typing import Dict, List, Any
 
-class MilestoneGraph:
-    """Track milestone dependencies and state."""
-    
-    def __init__(self, nodes: List[Dict[str, Any]]):
-        self.nodes = nodes
-        self.running = set()
-        self.passed = set()
-        self.failed = set()
-        
-    def incomplete(self) -> bool:
-        """Return True if any milestones are not passed/failed."""
-        complete = self.passed | self.failed
-        return len(complete) < len(self.nodes)
-        
-    def ready_nodes(self) -> List[Dict[str, Any]]:
-        """Return nodes whose dependencies are satisfied."""
-        ready = []
-        active = self.running | self.failed
-        for node in self.nodes:
-            if node["id"] not in active | self.passed:
-                deps = set(node.get("deps", []))
-                if deps <= self.passed:  # all deps passed
-                    ready.append(node)
-        return ready
-        
-    def mark_running(self, mid: str) -> None:
-        """Mark milestone as currently executing."""
-        self.running.add(mid)
-        
-    def mark_passed(self, mid: str) -> None:
-        """Mark milestone as successfully completed."""
-        self.running.remove(mid)
-        self.passed.add(mid)
-        
-    def mark_failed(self, mid: str) -> None:
-        """Mark milestone as failed."""
-        self.running.remove(mid)
-        self.failed.add(mid)
-
-
-def load_graph(yaml_path: str) -> MilestoneGraph:
-    """Load milestone graph from YAML file."""
-    path = Path(yaml_path)
+def load_graph(path: str):
+    """
+    Load milestone graph from YAML and return a NetworkX DiGraph with:
+    - Nodes have 'meta' dict with milestone data
+    - Nodes have 'state' in (NotStarted, Running, Passed, Failed)
+    - Dependencies are edges between milestone nodes
+    - Graph has convenience methods for state transitions
+    """
+    path = Path(path)
     if not path.exists():
-        # For testing, return empty graph
-        return MilestoneGraph([])
+        # Return empty graph for testing
+        g = nx.DiGraph()
+        g.ready_nodes = lambda: []
+        g.mark_running = lambda _: None
+        g.mark_passed = lambda _: None
+        g.mark_failed = lambda _: None
+        g.incomplete = lambda: False
+        return g
+
+    data = yaml.safe_load(path.open())
+    g = nx.DiGraph()
     
-    with path.open() as f:
-        data = yaml.safe_load(f)
-    return MilestoneGraph(data.get("nodes", []))
+    # Add nodes and edges
+    for m in data:
+        g.add_node(m["id"], meta=m, state="NotStarted")
+        for dep in m.get("dependencies", []):
+            g.add_edge(dep, m["id"])
+    
+    # Helper function for ready_nodes to keep it readable
+    def get_ready_nodes():
+        return [
+            g.nodes[n]["meta"]
+            for n in g.nodes
+            if g.nodes[n]["state"] == "NotStarted"
+            and all(g.nodes[p]["state"] == "Passed" for p in g.predecessors(n))
+        ]    # Helper function for incomplete check
+    def has_incomplete():
+        return any(
+            g.nodes[n]["state"] in ("NotStarted", "Running", "Failed")
+            for n in g.nodes
+        )
+    
+    # Attach state management methods
+    g.ready_nodes = get_ready_nodes
+    g.mark_running = lambda mid: g.nodes[mid].__setitem__("state", "Running")
+    g.mark_passed = lambda mid: g.nodes[mid].__setitem__("state", "Passed")
+    g.mark_failed = lambda mid: g.nodes[mid].__setitem__("state", "Failed")
+    g.incomplete = has_incomplete
+    
+    return g

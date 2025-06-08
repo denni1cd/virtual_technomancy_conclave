@@ -1,0 +1,16 @@
+# examples/milestones.yaml
+- id: auth_module
+  goal: "Implement JWT-based authentication layer."
+  dependencies: []
+
+- id: user_profile
+  goal: "Add user profile CRUD screens."
+  dependencies: [auth_module]
+
+- id: billing_api
+  goal: "Build REST endpoints and tests for billing."
+  dependencies: []
+
+- id: reporting_dashboard
+  goal: "Create admin reporting dashboard."
+  dependencies: [billing_api]

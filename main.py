@@ -19,12 +19,6 @@ WORKSPACE = Path(__file__).resolve().parent / "workspace"
 WORKSPACE.mkdir(exist_ok=True)
 HELLO_PATH = WORKSPACE / "hello.txt"
 
-# Two toy milestones so you can see the PASS → DONE flow.
-MILESTONES = [
-    {"goal": "Write greeting file"},
-    {"goal": "Add logging stub"},
-]
-
 # ───────────────────────── main ─────────────────────────── #
 def main() -> None:
     if len(sys.argv) < 2:
@@ -32,16 +26,12 @@ def main() -> None:
         sys.exit(1)
 
     epic = sys.argv[1]
-    print(f"[Conclave] bootstrapping for epic -> {epic!r}")
-
+    print(f"[Conclave] bootstrapping for epic -> {epic!r}")    # -----------------------------------------------------
+    # (A) ARCH kicks off parallel milestones via scheduler
     # -----------------------------------------------------
-    # (A) ARCH kicks off sequential milestones
-    # -----------------------------------------------------
-    arch = factory.spawn("ArchTechnomancer")
-    runner = MilestoneRunner(MILESTONES)
-
-    while runner.run_next() != "done":
-        continue
+    from conclave.agents.parallel_runner import ParallelScheduler
+    scheduler = ParallelScheduler("conclave/config/milestones.yaml")
+    scheduler.run_all()
 
     # -----------------------------------------------------
     # (B) Write a hello artefact so users still see a file
