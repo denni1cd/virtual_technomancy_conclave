@@ -7,14 +7,18 @@ Responsibilities
 • Provide `.think(prompt)` that routes through the Agent and logs
   prompt/completion token usage plus latency.
 • Expose basic metadata (`role_name`, `model`, `created_at`, …).
+
+The hard-cap decorator `@cost_guard` is a no-op stub until T-15.
 """
 
 from __future__ import annotations
 
 import time
+import contextvars
 from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any, Dict, List
+from uuid import uuid4
 
 from openai import OpenAI, AsyncOpenAI  # SDK v1.3+
 from pydantic import BaseModel, Field
@@ -47,6 +51,8 @@ class TechnomancerBase:
 
     def __init__(self, role_name: str, **kwargs) -> None:
         self.created_at: datetime = datetime.now(UTC)
+        self.agent_id = f"{role_name}_{uuid4().hex[:8]}"
+        contextvars.ContextVar("agent_id").set(self.agent_id)
         self.cfg = TechnomancerConfig(role_name=role_name, **kwargs)
 
     # ──────────────────────────────────────────────────────────────
@@ -84,7 +90,7 @@ class TechnomancerBase:
 
         log_usage(
             role_name=self.cfg.role_name,
-            agent_id=self.cfg.role_name,
+            agent_id=self.agent_id,  # Using the unique agent_id
             tokens=total_tokens,
             cost=cost
         )
@@ -106,11 +112,11 @@ class TechnomancerBase:
         cost = total_tokens * _TOKEN_PRICE
         log_usage(
             role_name=self.cfg.role_name,
-            agent_id=self.cfg.role_name,
+            agent_id=self.agent_id,  # Using the unique agent_id
             tokens=total_tokens,
             cost=cost
         )
 
     # conventional __repr__ for debugging
     def __repr__(self) -> str:  # noqa: D401
-        return f"<{self.cfg.role_name} model={self.cfg.model!s}>"
+        return f"<{self.cfg.role_name}_{self.agent_id} model={self.cfg.model!s}>"
