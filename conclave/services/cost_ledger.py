@@ -6,11 +6,13 @@ from __future__ import annotations
 
 import json
 import contextvars
-from datetime import datetime, UTC
+from datetime import datetime
 from importlib import resources
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Dict
+from typing import Any, Dict, Callable
+import functools
+import asyncio
 
 import portalocker
 import yaml
@@ -33,26 +35,31 @@ _LEDGER_FILE = Path(__file__).resolve().parents[2] / "conclave_usage.jsonl"
 _LEDGER_FILE.parent.mkdir(exist_ok=True)          # ensure folder
 _TOKEN_PRICE = 1 / 100_000                        # $10 / 1 M tokens
 
+ROLE_CAPS = json.loads(
+    (Path(__file__).parent / ".." / "config" / "roles_caps.json").read_text()
+)
+agent_var: contextvars.ContextVar[str] = contextvars.ContextVar("agent_id")
+
 # ── exception ────────────────────────────────────────────────────────
-class CostCapExceeded(Exception):
-    """Raised when an agent exceeds its USD or token cap."""
+class CostCapExceeded(RuntimeError):
+    """Raised when an agent's projected or actual spend breaches its cap."""
 
 # ── helpers ──────────────────────────────────────────────────────────
 def _utc() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return datetime.now().isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def _totals(agent_id: str) -> dict:
     """Aggregate ledger totals for *agent_id*."""
-    tok = usd = 0
+    tok = cost = 0
     if _LEDGER_FILE.exists():
         with _LEDGER_FILE.open(encoding="utf-8") as fh:
             for ln in fh:
                 rec = json.loads(ln)
                 if rec["agent"] == agent_id:
-                    tok += rec["tokens"]
-                    usd += rec["cost"]
-    return {"tokens": tok, "usd": usd}
+                    tok += rec.get("tokens", 0)
+                    cost += rec.get("cost", 0.0)
+    return {"tokens": tok, "cost": cost}
 
 # ── public API ───────────────────────────────────────────────────────
 def log_usage(
@@ -79,13 +86,13 @@ def log_usage(
         json_line = json.dumps(rec, separators=(",", ":"))
         fh.write(json_line + "\n")
 
-    caps = _ROLE_CAPS.get(role_name)
+    caps = ROLE_CAPS.get(role_name)
     if caps:
         run = _totals(agent_id)
-        if run["tokens"] > caps["tokens"] or run["usd"] > caps["usd"]:
+        if run["cost"] > caps["dollar_cap"]:
             raise CostCapExceeded(
                 f"{agent_id} exceeded {role_name} cap "
-                f"({run['tokens']} tkn / ${run['usd']})"
+                f"(${run['cost']:.2f} / ${caps['dollar_cap']:.2f})"
             )
 
 def log_for(role_name: str, tokens: int, cost: float):
@@ -97,7 +104,65 @@ def log_for(role_name: str, tokens: int, cost: float):
     agent_id = getattr(contextvars.ContextVar("agent_id"), "get", lambda: role_name)()
     log_usage(role_name, agent_id, tokens, cost)
 
-def cost_guard(fn):               # in cost_ledger.py for now
-    async def _inner(*a, **k):    # noqa: D401
-        return await fn(*a, **k)
-    return _inner
+def cost_guard(role_name: str, est_tokens: int = 0, est_cost: float = 0.0):
+    """
+    Wrap a function that *actually* calls the LLM.
+
+    1.  Pre-check: projected spend  (est_cost) against remaining budget.
+    2.  Execute fn → expect it returns (result, tokens_used, cost_used)
+        *or* just `result` (in which case log nothing).
+    3.  Post-log: raise if running total > cap.
+    """
+    cap = ROLE_CAPS[role_name]["dollar_cap"]
+    def decorator(fn: Callable[..., Any]):
+        if asyncio.iscoroutinefunction(fn):
+            @functools.wraps(fn)
+            async def async_wrapper(*args, **kwargs):
+                agent_id = agent_var.get(role_name)
+                spent = _totals(agent_id)["cost"]
+                if spent + est_cost > cap:
+                    raise CostCapExceeded(
+                        f"{agent_id} would exceed ${cap:.2f} budget "
+                        f"(spent {spent:.2f}, need {est_cost:.2f})"
+                    )
+                rv = await fn(*args, **kwargs)
+                if isinstance(rv, tuple) and len(rv) == 3:
+                    result, tokens, cost = rv
+                    log_usage(role_name, agent_id, tokens, cost)
+                else:
+                    result = rv
+                    tokens = cost = 0
+                new_total = _totals(agent_id)["cost"]
+                if new_total > cap:
+                    raise CostCapExceeded(
+                        f"{agent_id} exceeded ${cap:.2f} after call "
+                        f"(now {new_total:.2f})"
+                    )
+                return result
+            return async_wrapper
+        else:
+            @functools.wraps(fn)
+            def sync_wrapper(*args, **kwargs):
+                agent_id = agent_var.get(role_name)
+                spent = _totals(agent_id)["cost"]
+                if spent + est_cost > cap:
+                    raise CostCapExceeded(
+                        f"{agent_id} would exceed ${cap:.2f} budget "
+                        f"(spent {spent:.2f}, need {est_cost:.2f})"
+                    )
+                rv = fn(*args, **kwargs)
+                if isinstance(rv, tuple) and len(rv) == 3:
+                    result, tokens, cost = rv
+                    log_usage(role_name, agent_id, tokens, cost)
+                else:
+                    result = rv
+                    tokens = cost = 0
+                new_total = _totals(agent_id)["cost"]
+                if new_total > cap:
+                    raise CostCapExceeded(
+                        f"{agent_id} exceeded ${cap:.2f} after call "
+                        f"(now {new_total:.2f})"
+                    )
+                return result
+            return sync_wrapper
+    return decorator
