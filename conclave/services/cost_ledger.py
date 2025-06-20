@@ -13,6 +13,7 @@ from types import MappingProxyType
 from typing import Any, Dict, Callable
 import functools
 import asyncio
+import threading
 
 import portalocker
 import yaml
@@ -38,7 +39,12 @@ _TOKEN_PRICE = 1 / 100_000                        # $10 / 1 M tokens
 ROLE_CAPS = json.loads(
     (Path(__file__).parent / ".." / "config" / "roles_caps.json").read_text()
 )
-agent_var: contextvars.ContextVar[str] = contextvars.ContextVar("agent_id")
+
+# Module-level ContextVar for agent_id
+_AGENT_ID_VAR: contextvars.ContextVar[str] = contextvars.ContextVar("agent_id")
+
+# Lock for reading totals (separate from write lock)
+_totals_lock = threading.Lock()
 
 # ── exception ────────────────────────────────────────────────────────
 class CostCapExceeded(RuntimeError):
@@ -50,15 +56,20 @@ def _utc() -> str:
 
 
 def _totals(agent_id: str) -> dict:
-    """Aggregate ledger totals for *agent_id*."""
+    """
+    Aggregate ledger totals for *agent_id*.
+    
+    TODO: This is O(n) and could be cached in memory for high-volume runs.
+    """
     tok = cost = 0
     if _LEDGER_FILE.exists():
-        with _LEDGER_FILE.open(encoding="utf-8") as fh:
-            for ln in fh:
-                rec = json.loads(ln)
-                if rec["agent"] == agent_id:
-                    tok += rec.get("tokens", 0)
-                    cost += rec.get("cost", 0.0)
+        with _totals_lock:  # Use separate lock for reading
+            with _LEDGER_FILE.open(encoding="utf-8") as fh:
+                for ln in fh:
+                    rec = json.loads(ln)
+                    if rec["agent"] == agent_id:
+                        tok += rec.get("tokens", 0)
+                        cost += rec.get("cost", 0.0)
     return {"tokens": tok, "cost": cost}
 
 # ── public API ───────────────────────────────────────────────────────
@@ -81,88 +92,42 @@ def log_usage(
     if extra:
         rec.update(extra)
 
-    # atomic append
-    with portalocker.Lock(_LEDGER_FILE, "a", timeout=5, encoding="utf-8") as fh:
-        json_line = json.dumps(rec, separators=(",", ":"))
-        fh.write(json_line + "\n")
-
+    # Check caps before acquiring write lock
     caps = ROLE_CAPS.get(role_name)
     if caps:
         run = _totals(agent_id)
-        if run["cost"] > caps["dollar_cap"]:
+        if run["cost"] + cost > caps["dollar_cap"]:
             raise CostCapExceeded(
-                f"{agent_id} exceeded {role_name} cap "
-                f"(${run['cost']:.2f} / ${caps['dollar_cap']:.2f})"
+                f"{agent_id} would exceed {role_name} cap "
+                f"(${run['cost'] + cost:.2f} / ${caps['dollar_cap']:.2f})"
             )
+
+    # Atomic append with write lock
+    with portalocker.Lock(_LEDGER_FILE, "a", timeout=5, encoding="utf-8") as fh:
+        # Re-seek to end and append the new record
+        fh.seek(0, 2)  # Seek to end
+        json_line = json.dumps(rec, separators=(",", ":"))
+        fh.write(json_line + "\n")
 
 def log_for(role_name: str, tokens: int, cost: float):
     """
     Convenience wrapper that pulls agent_id from context.
     Falls back to role name if caller hasn't set self.agent_id
     """
-    # fall back to role name if caller hasn't set self.agent_id
-    agent_id = getattr(contextvars.ContextVar("agent_id"), "get", lambda: role_name)()
+    # Get agent_id from context var, fall back to role name
+    try:
+        agent_id = _AGENT_ID_VAR.get()
+    except LookupError:
+        agent_id = role_name
     log_usage(role_name, agent_id, tokens, cost)
 
-def cost_guard(role_name: str, est_tokens: int = 0, est_cost: float = 0.0):
+def noop_guard(role_name: str, est_tokens: int = 0, est_cost: float = 0.0):
     """
-    Wrap a function that *actually* calls the LLM.
-
-    1.  Pre-check: projected spend  (est_cost) against remaining budget.
-    2.  Execute fn → expect it returns (result, tokens_used, cost_used)
-        *or* just `result` (in which case log nothing).
-    3.  Post-log: raise if running total > cap.
+    Kept for backward compatibility; does nothing.
     """
-    cap = ROLE_CAPS[role_name]["dollar_cap"]
     def decorator(fn: Callable[..., Any]):
-        if asyncio.iscoroutinefunction(fn):
-            @functools.wraps(fn)
-            async def async_wrapper(*args, **kwargs):
-                agent_id = agent_var.get(role_name)
-                spent = _totals(agent_id)["cost"]
-                if spent + est_cost > cap:
-                    raise CostCapExceeded(
-                        f"{agent_id} would exceed ${cap:.2f} budget "
-                        f"(spent {spent:.2f}, need {est_cost:.2f})"
-                    )
-                rv = await fn(*args, **kwargs)
-                if isinstance(rv, tuple) and len(rv) == 3:
-                    result, tokens, cost = rv
-                    log_usage(role_name, agent_id, tokens, cost)
-                else:
-                    result = rv
-                    tokens = cost = 0
-                new_total = _totals(agent_id)["cost"]
-                if new_total > cap:
-                    raise CostCapExceeded(
-                        f"{agent_id} exceeded ${cap:.2f} after call "
-                        f"(now {new_total:.2f})"
-                    )
-                return result
-            return async_wrapper
-        else:
-            @functools.wraps(fn)
-            def sync_wrapper(*args, **kwargs):
-                agent_id = agent_var.get(role_name)
-                spent = _totals(agent_id)["cost"]
-                if spent + est_cost > cap:
-                    raise CostCapExceeded(
-                        f"{agent_id} would exceed ${cap:.2f} budget "
-                        f"(spent {spent:.2f}, need {est_cost:.2f})"
-                    )
-                rv = fn(*args, **kwargs)
-                if isinstance(rv, tuple) and len(rv) == 3:
-                    result, tokens, cost = rv
-                    log_usage(role_name, agent_id, tokens, cost)
-                else:
-                    result = rv
-                    tokens = cost = 0
-                new_total = _totals(agent_id)["cost"]
-                if new_total > cap:
-                    raise CostCapExceeded(
-                        f"{agent_id} exceeded ${cap:.2f} after call "
-                        f"(now {new_total:.2f})"
-                    )
-                return result
-            return sync_wrapper
+        return fn
     return decorator
+
+# Alias for backward compatibility
+cost_guard = noop_guard

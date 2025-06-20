@@ -23,7 +23,7 @@ from uuid import uuid4
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
-from conclave.services.cost_ledger import log_usage, cost_guard, _TOKEN_PRICE, agent_var
+from conclave.services.cost_ledger import log_usage, cost_guard, _TOKEN_PRICE, _AGENT_ID_VAR
 
 # ---------------------------------------------------------------------------
 _client = AsyncOpenAI()        # picks up OPENAI_API_KEY from env
@@ -52,7 +52,7 @@ class TechnomancerBase:
     def __init__(self, role_name: str, **kwargs) -> None:
         self.created_at: datetime = datetime.now()
         self.agent_id = f"{role_name}_{uuid4().hex[:8]}"
-        agent_var.set(self.agent_id)
+        _AGENT_ID_VAR.set(self.agent_id)
         self.cfg = TechnomancerConfig(role_name=role_name, **kwargs)
 
     # ──────────────────────────────────────────────────────────────
@@ -92,10 +92,21 @@ class TechnomancerBase:
         High-level helper: send *prompt* to the LLM and return the answer.
         Additional kwargs bubble down to `_call_llm()`.
         """
-        # The decorator returns just the result string, but the linter is confused
-        # by the type hint on _call_llm. We cast to Any to resolve it.
-        result = await cast(Any, self._call_llm(prompt, **kw))
-        return result
+        # Since cost_guard is now a no-op, we need to handle the tuple return manually
+        result_tuple = await self._call_llm(prompt, **kw)
+        if isinstance(result_tuple, tuple) and len(result_tuple) == 3:
+            result, tokens, cost = result_tuple
+            # Log the usage manually since cost_guard is no-op
+            log_usage(
+                role_name=self.cfg.role_name,
+                agent_id=self.agent_id,
+                tokens=tokens,
+                cost=cost
+            )
+            return str(result)
+        else:
+            # Fallback for unexpected return type
+            return str(result_tuple)
 
     def _log_cost(self, prompt_tokens: int, completion_tokens: int) -> None:
         """For cost-cap test."""

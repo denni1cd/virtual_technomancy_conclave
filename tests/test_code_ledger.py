@@ -1,5 +1,6 @@
 import json
 import threading
+import pytest
 from pathlib import Path
 
 from conclave.services import cost_ledger
@@ -15,10 +16,10 @@ def _spam_logger(target: Path, agent_id: str):
             extra={"task": "unit-test"},
         )
 
-def test_parallel_logging(tmp_path):
+def test_parallel_logging(tmp_path, monkeypatch):
     """Two threads append; resulting file has 20 valid JSON lines."""
     # point the ledger to temp dir for isolation
-    cost_ledger._LEDGER_FILE = tmp_path / "ledger.jsonl"
+    monkeypatch.setattr("conclave.services.cost_ledger._LEDGER_FILE", tmp_path / "ledger.jsonl")
 
     t1 = threading.Thread(target=_spam_logger, args=(tmp_path, "Tech-A"))
     t2 = threading.Thread(target=_spam_logger, args=(tmp_path, "Tech-B"))
