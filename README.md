@@ -1,18 +1,19 @@
 # Conclave
 
 Conclave is a **fully agentic, cost‑aware software‑engineering swarm**.
-It couples the **OpenAI Agents SDK** (vertical orchestration & tool‐use via the Responses API) with Google’s **Agent‑to‑Agent (A2A) protocol** (horizontal peer‑to‑peer collaboration).
+It couples the **OpenAI Agents SDK** (vertical orchestration & tool‑use via the Responses API) with Google’s **Agent‑to‑Agent (A2A) protocol** (horizontal peer‑to‑peer collaboration).
 The system turns natural‑language prompts into tested, production‑ready code while staying within strict token‑ and dollar‑budgets.
 
 ---
 
 ## Phase Snapshot
 
-| Phase                           | Goal                                           | Status         |
-| ------------------------------- | ---------------------------------------------- | -------------- |
-| **Phase 1 – Foundations**       | Skeleton swarm, guardrails, CI                 | **✔ Complete** |
-| **Phase 2 – Autonomous Agents** | Real LLM calls, parallel milestones, cost caps | **▲ Active**   |
-| **Phase 3 – Enhancements**      | Observability, human‑in‑loop, scaling          | ⏳ Planned      |
+| Phase                             | Goal                                  | Status         |
+| --------------------------------- | ------------------------------------- | -------------- |
+| **Phase 1 – Foundations**         | Skeleton swarm, guardrails, CI        | **✔ Complete** |
+| **Phase 2 – Autonomous Agents**   | Real LLM calls, cost caps             | **✔ Complete** |
+| **Phase 3 – Parallel Milestones** | Parallel milestones                   | **✔ Complete** |
+| **Phase 4 – Enhancements**        | Observability, human‑in‑loop, scaling | ⏳ Planned      |
 
 ---
 
@@ -123,7 +124,7 @@ Caps live in `roles.yaml` and are enforced in runtime via the **cost ledger** (p
 
 ---
 
-## Upcoming (Phase 2 → Phase 3)
+## Upcoming (Phase 4 – Enhancements)
 
 * **T15‑b** – ContextVar & ledger read‑lock polish (PR #231)
 * **T16** – External tracing: LangSmith adapter, span tree, cost events
