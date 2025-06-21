@@ -6,7 +6,7 @@ import asyncio
 
 from conclave.agents.agent_factory import factory
 from conclave.agents.high_technomancer import HighTechnomancer
-from conclave.services.cost_ledger import CostCapExceeded
+from conclave.services.cost_ledger import CostCapExceeded, log_and_check
 
 async def demo_technomancer():
     """
@@ -49,8 +49,7 @@ def demo_high_technomancer():
             # This is a stub and won't actually work on the spawned agent
             # ht.deliberate("continue")
             # For now, we manually log usage to test the cap
-            from conclave.services.cost_ledger import log_usage
-            log_usage(ht.cfg.role_name, ht.agent_id, 1200, 0.18)
+            log_and_check(ht.cfg.role_name, ht.agent_id, 1200, 0.18)
 
 
     except CostCapExceeded as exc:
