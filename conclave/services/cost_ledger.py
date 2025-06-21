@@ -6,11 +6,14 @@ from __future__ import annotations
 
 import json
 import contextvars
-from datetime import datetime, UTC
+from datetime import datetime
 from importlib import resources
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Dict
+from typing import Any, Dict, Callable
+import functools
+import asyncio
+import threading
 
 import portalocker
 import yaml
@@ -33,26 +36,41 @@ _LEDGER_FILE = Path(__file__).resolve().parents[2] / "conclave_usage.jsonl"
 _LEDGER_FILE.parent.mkdir(exist_ok=True)          # ensure folder
 _TOKEN_PRICE = 1 / 100_000                        # $10 / 1 M tokens
 
+ROLE_CAPS = json.loads(
+    (Path(__file__).parent / ".." / "config" / "roles_caps.json").read_text()
+)
+
+# Module-level ContextVar for agent_id
+_AGENT_ID_VAR: contextvars.ContextVar[str] = contextvars.ContextVar("agent_id")
+
+# Lock for reading totals (separate from write lock)
+_totals_lock = threading.Lock()
+
 # ── exception ────────────────────────────────────────────────────────
-class CostCapExceeded(Exception):
-    """Raised when an agent exceeds its USD or token cap."""
+class CostCapExceeded(RuntimeError):
+    """Raised when an agent's projected or actual spend breaches its cap."""
 
 # ── helpers ──────────────────────────────────────────────────────────
 def _utc() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return datetime.now().isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def _totals(agent_id: str) -> dict:
-    """Aggregate ledger totals for *agent_id*."""
-    tok = usd = 0
+    """
+    Aggregate ledger totals for *agent_id*.
+    
+    TODO: This is O(n) and could be cached in memory for high-volume runs.
+    """
+    tok = cost = 0
     if _LEDGER_FILE.exists():
-        with _LEDGER_FILE.open(encoding="utf-8") as fh:
-            for ln in fh:
-                rec = json.loads(ln)
-                if rec["agent"] == agent_id:
-                    tok += rec["tokens"]
-                    usd += rec["cost"]
-    return {"tokens": tok, "usd": usd}
+        with _totals_lock:  # Use separate lock for reading
+            with _LEDGER_FILE.open(encoding="utf-8") as fh:
+                for ln in fh:
+                    rec = json.loads(ln)
+                    if rec["agent"] == agent_id:
+                        tok += rec.get("tokens", 0)
+                        cost += rec.get("cost", 0.0)
+    return {"tokens": tok, "cost": cost}
 
 # ── public API ───────────────────────────────────────────────────────
 def log_usage(
@@ -74,30 +92,42 @@ def log_usage(
     if extra:
         rec.update(extra)
 
-    # atomic append
-    with portalocker.Lock(_LEDGER_FILE, "a", timeout=5, encoding="utf-8") as fh:
-        json_line = json.dumps(rec, separators=(",", ":"))
-        fh.write(json_line + "\n")
-
-    caps = _ROLE_CAPS.get(role_name)
+    # Check caps before acquiring write lock
+    caps = ROLE_CAPS.get(role_name)
     if caps:
         run = _totals(agent_id)
-        if run["tokens"] > caps["tokens"] or run["usd"] > caps["usd"]:
+        if run["cost"] + cost > caps["dollar_cap"]:
             raise CostCapExceeded(
-                f"{agent_id} exceeded {role_name} cap "
-                f"({run['tokens']} tkn / ${run['usd']})"
+                f"{agent_id} would exceed {role_name} cap "
+                f"(${run['cost'] + cost:.2f} / ${caps['dollar_cap']:.2f})"
             )
+
+    # Atomic append with write lock
+    with portalocker.Lock(_LEDGER_FILE, "a", timeout=5, encoding="utf-8") as fh:
+        # Re-seek to end and append the new record
+        fh.seek(0, 2)  # Seek to end
+        json_line = json.dumps(rec, separators=(",", ":"))
+        fh.write(json_line + "\n")
 
 def log_for(role_name: str, tokens: int, cost: float):
     """
     Convenience wrapper that pulls agent_id from context.
     Falls back to role name if caller hasn't set self.agent_id
     """
-    # fall back to role name if caller hasn't set self.agent_id
-    agent_id = getattr(contextvars.ContextVar("agent_id"), "get", lambda: role_name)()
+    # Get agent_id from context var, fall back to role name
+    try:
+        agent_id = _AGENT_ID_VAR.get()
+    except LookupError:
+        agent_id = role_name
     log_usage(role_name, agent_id, tokens, cost)
 
-def cost_guard(fn):               # in cost_ledger.py for now
-    async def _inner(*a, **k):    # noqa: D401
-        return await fn(*a, **k)
-    return _inner
+def noop_guard(role_name: str, est_tokens: int = 0, est_cost: float = 0.0):
+    """
+    Kept for backward compatibility; does nothing.
+    """
+    def decorator(fn: Callable[..., Any]):
+        return fn
+    return decorator
+
+# Alias for backward compatibility
+cost_guard = noop_guard

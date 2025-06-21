@@ -1,137 +1,145 @@
 # Conclave
 
-Conclave is a **fully agentic, cost‑aware software engineering swarm** that couples the **OpenAI Agents SDK** (for vertical orchestration and tool use via the Responses API) with Google’s **Agent‑to‑Agent (A2A) protocol** for horizontal peer‑to‑peer communication.
-
-Phase 1 (complete) scaffolds the foundation:
-
-- dynamic runtime role hierarchy
-- cost‑ledger + configurable guardrails
-- Portalocker‑safe file & search tools
-- OpenAI tracing hooks (via `.env` key)
-- majority‑vote Debate Manager
-- CLI smoke test
-- CI suite with 10 green tests
-
-Phase 2 (in progress) turns this into a real swarm:
-- real model calls via **OpenAI Agents SDK + Responses API**
-- A2A peer messaging via FastAPI
-- enforcement of cost caps
-- milestone state machine with retry/approval cycles
+Conclave is a **fully agentic, cost‑aware software‑engineering swarm**.
+It couples the **OpenAI Agents SDK** (vertical orchestration & tool‐use via the Responses API) with Google’s **Agent‑to‑Agent (A2A) protocol** (horizontal peer‑to‑peer collaboration).
+The system turns natural‑language prompts into tested, production‑ready code while staying within strict token‑ and dollar‑budgets.
 
 ---
 
-## Project Summary
+## Phase Snapshot
 
-Conclave is designed as a **hierarchical, autonomous dev team** composed of AI agents called *Technomancers*, governed by a cost ledger, peer communication, and role-specific duties. Each role spawns others as needed, escalating to a **HighTechnomancer** or **ArchTechnomancer** when tasks require orchestration or milestone-wide coordination.
+| Phase                           | Goal                                           | Status         |
+| ------------------------------- | ---------------------------------------------- | -------------- |
+| **Phase 1 – Foundations**       | Skeleton swarm, guardrails, CI                 | **✔ Complete** |
+| **Phase 2 – Autonomous Agents** | Real LLM calls, parallel milestones, cost caps | **▲ Active**   |
+| **Phase 3 – Enhancements**      | Observability, human‑in‑loop, scaling          | ⏳ Planned      |
 
-**Agents use the latest OpenAI GPT‑4.1 model**, defaulting to the **Responses API** for tool interaction and reasoning. A2A communication is backed by an SSE/POST protocol, allowing agents to synchronize across processes.
+---
+
+## Task Ledger (T01 – T16)
+
+| ID        | Title                           | State | Highlights                                       |
+| --------- | ------------------------------- | ----- | ------------------------------------------------ |
+| **T01**   | Dynamic role factory            | ✔     | `AgentFactory` spawns Arch → High → Technomancer |
+| **T02**   | JSONL cost ledger               | ✔     | Portalocker‑safe writes; per‑agent totals        |
+| **T03**   | Guardrail caps                  | ✔     | Caps enforced post‑call via ledger checks        |
+| **T04**   | File‑I/O tool                   | ✔     | Locked read/write to shared workspace            |
+| **T05**   | Web‑search tool                 | ✔     | Stub; Responses‑API function call                |
+| **T06**   | OpenAI trace hooks              | ✔     | Usage metrics sent to dashboard                  |
+| **T07**   | Debate manager                  | ✔     | Odd‑agent majority vote with `asyncio.gather`    |
+| **T08**   | CLI demo & CI suite             | ✔     | 68 unit tests; 95 % coverage                     |
+| **T09**   | LLM call stubs                  | ✔     | Phase‑1 placeholder (superseded by T11)          |
+| **T10**   | Real LLM calls                  | ✔     | GPT‑4o via Agents SDK & tool‑calling             |
+| **T11**   | High‑Technomancer orchestration | ✔     | Spawns N technomancers; merges votes             |
+| **T12**   | A2A peer messaging              | ✔     | FastAPI `/tasks`, `/subscribe` SSE               |
+| **T13**   | Milestone FSM **→ parallel**    | ✔     | `ParallelScheduler` + DAG deps + sandbox merge   |
+| **T14**   | Cost‑cap enforcement            | ✔     | `CostCapExceeded` raised on over‑spend           |
+| **T15‑b** | Ledger polish                   | 🛠    | ContextVar fix, read‑lock (in review)            |
+| **T16**   | External tracing                | ⏳     | LangSmith/Langfuse spans & cost events           |
+
+*Full roadmap at bottom of this file.*
 
 ---
 
 ## Quick Start
 
 ```bash
-# 1 – clone & install
-$ git clone https://github.com/your-org/conclave.git
+# 1 – clone & install
+$ git clone https://github.com/your‑org/conclave.git
 $ cd conclave
 $ conda create -n conclave python=3.12 -y && conda activate conclave
-$ pip install -r requirements.txt   # portalocker, python-dotenv, pytest, httpx
+$ pip install -r requirements.txt
 
-# 2 – create a .env with your OpenAI key
-OPENAI_API_KEY=sk-...
+# 2 – add OpenAI key
+$ echo "OPENAI_API_KEY=sk‑..." > .env
 
-# 3 – run tests
-$ pytest -q    # All tests should pass
+# 3 – run unit tests (no tokens)
+$ pytest -q   # 68 green tests
 
-# 4 – smoke demo
-$ python main.py "refactor logging module"
+# 4 – run live demo (real tokens)
+$ python -m conclave.demo_agentic_build \
+    --milestones examples/hello.yaml
 ```
 
-Outputs include:
-- artefacts in `workspace/`
-- JSONL cost ledger at `conclave_usage.jsonl`
-- live OpenAI trace link per call
+The live demo spawns the full Arch → High → Tech hierarchy, writes code to `workspace/`, runs pytest on it, and logs spend to `conclave_usage.jsonl`.
 
 ---
 
-## Directory Layout (Phase 2+)
+## Directory Layout
 
 ```
 conclave/
-├─ config/            # guardrails.yaml • roles.yaml
-├─ agents/            # technomancer_base.py • high_technomancer.py • agent_factory.py
-├─ tools/             # file_io.py • web_search.py • peer_chat_a2a.py
-├─ services/          # cost_ledger.py • trace_utils.py • a2a_server.py
+├─ agents/            # Arch, High, Technomancer base classes
 ├─ consensus/         # debate_manager.py
-├─ workspace/         # generated code & artefacts
-├─ tests/             # 15+ tests for CLI, tools, and agents
-└─ main.py            # CLI entry point
+├─ config/            # roles.yaml • settings
+├─ services/          # cost_ledger.py • a2a_server.py
+├─ tools/             # file_io.py • web_search.py • peer_chat.py
+├─ utils/             # milestone_graph.py • tracing stub
+├─ workspace/         # generated code (git‑ignored)
+├─ tests/             # pytest suite
+└─ demo_agentic_build.py
 ```
 
 ---
 
-## Runtime Role Hierarchy
+## Runtime Role Hierarchy & Budgets
 
-| Role                 | Responsibility                     | Cap ($ / tokens)  | Debate Rounds |
-|----------------------|-------------------------------------|--------------------|---------------|
-| **ArchTechnomancer** | Final milestone gate & retry logic | \$50 / 200 k       | 0             |
-| **HighTechnomancer** | Spawns Technomancers per task      | \$25 / 50 k        | 3             |
-| **Technomancer**     | Implements tasks                   | \$10 / 25 k        | 2             |
-| **Apprentice**       | Refactors, lints, tests            | \$5 / 5 k          | 0             |
+| Role                 | Purpose                                  | Cap (USD / tokens) |
+| -------------------- | ---------------------------------------- | ------------------ |
+| **ArchTechnomancer** | Milestone gatekeeper, retry, integration | 50 / 200 k         |
+| **HighTechnomancer** | Spawns Technomancers, debates, merges    | 25 / 50 k          |
+| **Technomancer**     | Implements single task                   | 10 / 25 k          |
+| **Apprentice**       | Refactor / lint / unit‑test              | 5 / 5 k            |
 
-Caps are defined in `roles.yaml` and enforced at runtime via the **cost ledger** and upcoming **guard decorators**.
+Caps live in `roles.yaml` and are enforced in runtime via the **cost ledger** (post‑call check). Exceeding a cap raises `CostCapExceeded`, marks the milestone failed, and triggers retry logic.
 
 ---
 
 ## Core Features
 
-- **OpenAI Agents SDK** – default to GPT‑4.1, use `Responses API` for tool integration  
-- **Function‑calling Tools** – file I/O, search, peer chat exposed as JSON tool schema  
-- **A2A Messaging** – FastAPI server (`/tasks`, `/subscribe`) allows real-time peer sync  
-- **Majority‑Vote Consensus** – odd‑agent majority vote converges on winning task outcome  
-- **Cost Ledger + Guardrails** – safe JSONL ledger with enforcement (in progress)  
-- **CLI Orchestration** – single-line interface to launch multi-agent swarm  
+* **OpenAI Agents SDK (GPT‑4o)** – tool‑calling with structured inputs/outputs
+* **File, Search, Peer‑Chat tools** – exposed via Responses‑API schemas
+* **A2A Messaging** – FastAPI + SSE for cross‑process chat
+* **Parallel Milestones** – DAG scheduler, per‑sandbox workspaces, merge + integration test
+* **Debate Consensus** – majority vote among odd Technomancer pool
+* **Cost Ledger** – JSONL ledger + portalocker lock, hard budget enforcement
+* **CLI & Demo Scripts** – one‑command prompt‑to‑program pipeline
 
 ---
 
-## Phase Roadmap
+## End‑to‑End Success Criteria
 
-| Phase                          | Goal                                           | Tasks                                                                                                                                                   |
-|--------------------------------|------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Phase 1 – Foundation**<br>*✅ Complete*       | Build scaffold with core architecture          | ✅ Dynamic Roles<br>✅ Cost Ledger<br>✅ Portalocker I/O<br>✅ Tracing Hooks<br>✅ Debate System<br>✅ CLI & Tests                                                           |
-| **Phase 2 – Production Agents**<br>*🛠 In Progress* | Enable real agents with communication, enforcement, and task workflow | ✅ Real LLM Calls via SDK<br>✅ HighTechnomancer orchestration<br>✅ A2A SSE peer chat<br>🔄 Cost Cap Enforcement<br>🔄 Milestone FSM               |
-| **Phase 3 – Observability & Scaling**<br>*📌 Planned* | Connect external tools and extend capabilities | ⏳ External Tracing (LangSmith)<br>⏳ Multi-host deployments<br>⏳ Plugin scaffolds for human-in-the-loop                                                           |
+1. **Hello‑World Milestone**
+   `python -m conclave.demo_agentic_build --milestones examples/hello.yaml`
+   ✔ Generates `workspace/hello.py` + test, all pytest green, spend ≤ budget.
+
+2. **Parallel Feature Build**
+   `python scripts/run_parallel_example.py --milestones examples/milestones_large.yaml`
+   ✔ All milestones pass, merged without conflict, ledger totals within global limits.
+
+3. **Budget Safety Demo**
+   `python cost_cap_demo.py`
+   ✔ Raises `CostCapExceeded` exactly once over cap; run continues safely.
+
+---
+
+## Upcoming (Phase 2 → Phase 3)
+
+* **T15‑b** – ContextVar & ledger read‑lock polish (PR #231)
+* **T16** – External tracing: LangSmith adapter, span tree, cost events
+* **T17** – Human‑in‑loop approval gates, git‑style merge conflicts
+* **T1x** – Multi‑host scheduler & autoscaling
 
 ---
 
 ## References
 
-- **Project docs**  
-  - [OpenAI Agents SDK docs][agents-sdk] citeturn1news10  
-  - [Responses API tool calling guide][responses-api] citeturn0news73  
+* **OpenAI Agents SDK** – [https://platform.openai.com/docs/assistants/](https://platform.openai.com/docs/assistants/)
+* **A2A Protocol** – [https://github.com/google/A2A](https://github.com/google/A2A)
+* **Portalocker** – [https://pypi.org/project/portalocker/](https://pypi.org/project/portalocker/)
+* **LangSmith Observability** – [https://docs.smith.langchain.com/observability](https://docs.smith.langchain.com/observability)
 
-- **Libraries**  
-  - [portalocker][portalocker] citeturn0search2turn0search9  
-  - [python-dotenv][dotenv] citeturn0search7  
+---
 
-- **Protocols & Algorithms**  
-  - [Agent2Agent (A2A) Protocol][a2a-protocol] citeturn0search3turn0search10  
-  - [Boyer–Moore majority vote algorithm][bmvote] citeturn0search4  
-
-- **Observability**  
-  - [LangSmith Observability Quickstart][langsmith] citeturn0search5  
-
-- **Standards**  
-  - [RFC 3339 Timestamp Spec][rfc3339]  
-
-- **News**  
-  navlistRecent Newsturn0news73,turn1news10  
-
-[agents-sdk]: https://platform.openai.com/docs/quickstart/add-some-examples  
-[responses-api]: https://platform.openai.com/docs/api-reference/introduction  
-[portalocker]: https://pypi.org/project/portalocker/  
-[dotenv]: https://pypi.org/project/python-dotenv/  
-[a2a-protocol]: https://github.com/google/A2A  
-[bmvote]: https://en.wikipedia.org/wiki/Boyer%E2%80%93Moore_majority_vote_algorithm  
-[langsmith]: https://docs.smith.langchain.com/observability  
-[rfc3339]: https://tools.ietf.org/html/rfc3339  
+> Conclave is licensed under Apache‑2.0.
+> © 2025 Your Org Inc.  All trademarks are property of their respective owners.

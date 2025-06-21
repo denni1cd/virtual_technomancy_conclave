@@ -15,15 +15,15 @@ from __future__ import annotations
 
 import time
 import contextvars
-from datetime import datetime, UTC
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, cast
 from uuid import uuid4
 
-from openai import OpenAI, AsyncOpenAI  # SDK v1.3+
+from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
-from conclave.services.cost_ledger import log_usage, cost_guard, _TOKEN_PRICE
+from conclave.services.cost_ledger import log_usage, cost_guard, _TOKEN_PRICE, _AGENT_ID_VAR
 
 # ---------------------------------------------------------------------------
 _client = AsyncOpenAI()        # picks up OPENAI_API_KEY from env
@@ -50,23 +50,20 @@ class TechnomancerBase:
     cfg: TechnomancerConfig                          # set by AgentFactory
 
     def __init__(self, role_name: str, **kwargs) -> None:
-        self.created_at: datetime = datetime.now(UTC)
+        self.created_at: datetime = datetime.now()
         self.agent_id = f"{role_name}_{uuid4().hex[:8]}"
-        contextvars.ContextVar("agent_id").set(self.agent_id)
+        _AGENT_ID_VAR.set(self.agent_id)
         self.cfg = TechnomancerConfig(role_name=role_name, **kwargs)
 
     # ──────────────────────────────────────────────────────────────
     # Low-level LLM call (Responses API) — guarded for cost caps.
     # ──────────────────────────────────────────────────────────────
-    @cost_guard
-    async def _call_llm(self, input_text: str, **kw) -> str:
+    @cost_guard(role_name="Technomancer", est_tokens=800, est_cost=0.10)
+    async def _call_llm(self, input_text: str, **kw) -> tuple[str, int, float]:
         """
         Send *input_text* to the agent and return the assistant's reply string.
         kw → forwarded to `responses.create()` (temperature, max_tokens, etc.).
         """
-        t0 = time.perf_counter()
-
-        # Don't pass history to responses.create()
         if 'history' in kw:
             del kw['history']
 
@@ -78,23 +75,14 @@ class TechnomancerBase:
             **kw,
         )
 
-        latency = time.perf_counter() - t0
-        # New OpenAI API uses different token count keys
         usage = rsp.usage.model_dump()
         prompt_tokens = usage.get('input_tokens', 0)
         completion_tokens = usage.get('output_tokens', 0)
         
-        # Calculate cost at $10 per 1M tokens
         total_tokens = prompt_tokens + completion_tokens
         cost = total_tokens * _TOKEN_PRICE
 
-        log_usage(
-            role_name=self.cfg.role_name,
-            agent_id=self.agent_id,  # Using the unique agent_id
-            tokens=total_tokens,
-            cost=cost
-        )
-        return rsp.output_text
+        return rsp.output_text, total_tokens, cost
 
     # ──────────────────────────────────────────────────────────────
     # Public helper every subclass calls
@@ -104,7 +92,21 @@ class TechnomancerBase:
         High-level helper: send *prompt* to the LLM and return the answer.
         Additional kwargs bubble down to `_call_llm()`.
         """
-        return await self._call_llm(prompt, **kw)
+        # Since cost_guard is now a no-op, we need to handle the tuple return manually
+        result_tuple = await self._call_llm(prompt, **kw)
+        if isinstance(result_tuple, tuple) and len(result_tuple) == 3:
+            result, tokens, cost = result_tuple
+            # Log the usage manually since cost_guard is no-op
+            log_usage(
+                role_name=self.cfg.role_name,
+                agent_id=self.agent_id,
+                tokens=tokens,
+                cost=cost
+            )
+            return str(result)
+        else:
+            # Fallback for unexpected return type
+            return str(result_tuple)
 
     def _log_cost(self, prompt_tokens: int, completion_tokens: int) -> None:
         """For cost-cap test."""

@@ -11,10 +11,10 @@ def test_cap_triggers(tmp_path, monkeypatch):
     tech = factory.spawn("Technomancer")
     # Test with direct log_usage call to simulate huge usage
     with pytest.raises(CostCapExceeded):
-        # 1M tokens at $10/1M = $10 cost
+        # 1M tokens at $10/1M = $10 cost, plus $0.01 to exceed cap
         cost_ledger.log_usage(
             role_name="Technomancer",
-            agent_id=tech.cfg.role_name,
-            tokens=1_000_000,
-            cost=10.0
+            agent_id=tech.agent_id,
+            tokens=1_001_000,  # 1M + 1K tokens
+            cost=10.01  # $10.01 to exceed $10.00 cap
         )

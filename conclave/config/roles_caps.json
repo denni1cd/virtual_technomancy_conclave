@@ -1,0 +1,6 @@
+{
+  "ArchTechnomancer": { "dollar_cap": 50.0 },
+  "HighTechnomancer": { "dollar_cap": 25.0 },
+  "Technomancer":     { "dollar_cap": 10.0 },
+  "Apprentice":       { "dollar_cap": 5.0 }
+} 
