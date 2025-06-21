@@ -23,7 +23,8 @@ from uuid import uuid4
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
-from conclave.services.cost_ledger import log_usage, cost_guard, _TOKEN_PRICE, _AGENT_ID_VAR
+from conclave.services.cost_ledger import log_and_check, cost_guard, _TOKEN_PRICE, _AGENT_ID_VAR
+from conclave.services.context import set_role, get_role, create_task_with_context
 
 # ---------------------------------------------------------------------------
 _client = AsyncOpenAI()        # picks up OPENAI_API_KEY from env
@@ -53,6 +54,7 @@ class TechnomancerBase:
         self.created_at: datetime = datetime.now()
         self.agent_id = f"{role_name}_{uuid4().hex[:8]}"
         _AGENT_ID_VAR.set(self.agent_id)
+        set_role(role_name)  # Set role in context
         self.cfg = TechnomancerConfig(role_name=role_name, **kwargs)
 
     # ──────────────────────────────────────────────────────────────
@@ -96,8 +98,8 @@ class TechnomancerBase:
         result_tuple = await self._call_llm(prompt, **kw)
         if isinstance(result_tuple, tuple) and len(result_tuple) == 3:
             result, tokens, cost = result_tuple
-            # Log the usage manually since cost_guard is no-op
-            log_usage(
+            # Use atomic log_and_check instead of separate log_usage call
+            log_and_check(
                 role_name=self.cfg.role_name,
                 agent_id=self.agent_id,
                 tokens=tokens,
@@ -112,7 +114,7 @@ class TechnomancerBase:
         """For cost-cap test."""
         total_tokens = prompt_tokens + completion_tokens
         cost = total_tokens * _TOKEN_PRICE
-        log_usage(
+        log_and_check(
             role_name=self.cfg.role_name,
             agent_id=self.agent_id,  # Using the unique agent_id
             tokens=total_tokens,
