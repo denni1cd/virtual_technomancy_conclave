@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 
 from conclave.services.cost_ledger import log_and_check, cost_guard, _TOKEN_PRICE, _AGENT_ID_VAR
 from conclave.services.context import set_role, get_role, create_task_with_context
+from conclave.services.tracing import get_tracer
 
 # ---------------------------------------------------------------------------
 _client = AsyncOpenAI()        # picks up OPENAI_API_KEY from env
@@ -69,22 +70,48 @@ class TechnomancerBase:
         if 'history' in kw:
             del kw['history']
 
-        rsp = await _client.responses.create(
-            model=self.cfg.model,
-            input=input_text,
-            instructions=self.cfg.instructions,
-            tools=self.cfg.tools,
-            **kw,
-        )
+        # Start tracing child span for LLM call
+        tracer = get_tracer()
+        with tracer.child_span(
+            name="llm_call",
+            kind="LLM",
+            metadata={
+                "model": self.cfg.model,
+                "role": self.cfg.role_name,
+                "agent_id": self.agent_id,
+                "input_length": len(input_text)
+            }
+        ):
+            rsp = await _client.responses.create(
+                model=self.cfg.model,
+                input=input_text,
+                instructions=self.cfg.instructions,
+                tools=self.cfg.tools,
+                **kw,
+            )
 
-        usage = rsp.usage.model_dump()
-        prompt_tokens = usage.get('input_tokens', 0)
-        completion_tokens = usage.get('output_tokens', 0)
-        
-        total_tokens = prompt_tokens + completion_tokens
-        cost = total_tokens * _TOKEN_PRICE
+            usage = rsp.usage.model_dump()
+            prompt_tokens = usage.get('input_tokens', 0)
+            completion_tokens = usage.get('output_tokens', 0)
+            
+            total_tokens = prompt_tokens + completion_tokens
+            cost = total_tokens * _TOKEN_PRICE
 
-        return rsp.output_text, total_tokens, cost
+            # Add tracing event for LLM response
+            tracer.add_event(
+                "llm_response",
+                {
+                    "model": self.cfg.model,
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": total_tokens,
+                    "response_length": len(rsp.output_text)
+                },
+                cost_usd=cost,
+                tokens=total_tokens
+            )
+
+            return rsp.output_text, total_tokens, cost
 
     # ──────────────────────────────────────────────────────────────
     # Public helper every subclass calls
@@ -103,7 +130,8 @@ class TechnomancerBase:
                 role_name=self.cfg.role_name,
                 agent_id=self.agent_id,
                 tokens=tokens,
-                cost=cost
+                cost=cost,
+                extra={"operation": "think"}
             )
             return str(result)
         else:

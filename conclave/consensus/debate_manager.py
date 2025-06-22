@@ -12,7 +12,9 @@ decision, history = mgr.run(issue="Pick a data-store", agents=[a1, a2, a3])
 from __future__ import annotations
 import asyncio, inspect, time
 from collections import Counter
-from typing import List, Tuple
+from typing import List, Tuple, Any
+
+from conclave.services.tracing import get_tracer
 
 class DebateTimeout(Exception): ...
 
@@ -46,21 +48,61 @@ class DebateManager:
             ) -> Tuple[str | None, List]:
         if not agents:
             raise ValueError("Must supply ≥1 agent")
-        history: List[Tuple[str, str]] = []
+        history: List[Tuple[str, Any]] = []
         loop = loop or asyncio.new_event_loop()
 
-        start = time.time()
-        for _ in range(self.rounds):
-            if self.timeout and (time.time() - start) > self.timeout:
-                raise DebateTimeout(self.timeout)
+        # Start tracing child span for debate
+        tracer = get_tracer()
+        with tracer.child_span(
+            name="debate_manager",
+            kind="DEBATE",
+            metadata={
+                "issue": issue,
+                "agent_count": len(agents),
+                "rounds": self.rounds,
+                "protocol": self.protocol
+            }
+        ):
+            start = time.time()
+            for round_num in range(self.rounds):
+                if self.timeout and (time.time() - start) > self.timeout:
+                    raise DebateTimeout(self.timeout)
 
-            proposals = loop.run_until_complete(
-                self._round(agents, issue, history)
+                proposals = loop.run_until_complete(
+                    self._round(agents, issue, history)
+                )
+                history.append(("round", proposals))
+                
+                # Add tracing event for debate round
+                tracer.add_event(
+                    "debate_round",
+                    {
+                        "round": round_num + 1,
+                        "proposals": proposals,
+                        "agent_count": len(agents)
+                    }
+                )
+                
+                decision = self._decide(proposals)
+                if decision:
+                    # Add tracing event for final decision
+                    tracer.add_event(
+                        "debate_choice",
+                        {
+                            "decision": decision,
+                            "rounds_used": round_num + 1,
+                            "protocol": self.protocol
+                        }
+                    )
+                    return decision, history
+
+            # no consensus after N rounds
+            tracer.add_event(
+                "debate_timeout",
+                {
+                    "rounds_completed": self.rounds,
+                    "protocol": self.protocol,
+                    "decision": None
+                }
             )
-            history.append(("round", proposals))
-            decision = self._decide(proposals)
-            if decision:
-                return decision, history
-
-        # no consensus after N rounds
-        return None, history
+            return None, history

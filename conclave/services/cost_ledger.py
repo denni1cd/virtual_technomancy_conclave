@@ -145,6 +145,27 @@ def log_and_check(role_name: str, agent_id: str, tokens: int, cost: float, *, ex
             json_line = json.dumps(rec, separators=(",", ":"))
             fh.write(json_line + "\n")
             fh.flush()
+    
+    # Add tracing event for cost
+    try:
+        from .tracing import get_tracer
+        tracer = get_tracer()
+        tracer.add_event(
+            "cost",
+            {
+                "role": role_name,
+                "agent": agent_id,
+                "operation": extra.get("operation", "unknown") if extra else "unknown",
+                "total_tokens": total_tok if caps else tokens,
+                "total_cost": total_cost if caps else cost
+            },
+            cost_usd=cost,
+            tokens=tokens
+        )
+    except Exception as e:
+        # Fail open - tracing errors shouldn't break cost logging
+        import logging
+        logging.debug(f"Failed to add cost trace event: {e}")
 
 # ── public API ───────────────────────────────────────────────────────
 def log_usage(

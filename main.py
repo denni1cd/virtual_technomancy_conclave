@@ -12,6 +12,7 @@ from pathlib import Path
 from conclave.agents.arch_runner import MilestoneRunner            # NEW
 from conclave.agents.agent_factory import factory
 from conclave.services.trace_utils import print_trace_url
+from conclave.services.tracing import get_tracer
 from conclave.tools import file_io
 
 # ───────────────────────── config ───────────────────────── #
@@ -36,17 +37,21 @@ def main() -> None:
     # -----------------------------------------------------
     # (B) Write a hello artefact so users still see a file
     # -----------------------------------------------------
-    file_io.write_file(HELLO_PATH, "Hello, Conclave!\n")
+    file_io.write_file(str(HELLO_PATH), "Hello, Conclave!\n")
     print(f"[Conclave] artefact written -> {HELLO_PATH.relative_to(Path.cwd())}")
 
     # -----------------------------------------------------
-    # (C) Surface a fake trace link (replace with real Runner.run)
+    # (C) Surface trace link if tracing is enabled
     # -----------------------------------------------------
-    class _StubRun:
-        trace_url = "https://platform.openai.com/traces/r/demo123"
-        usage = type("Usage", (), {"prompt_tokens": 1, "completion_tokens": 2})()
-
-    print_trace_url(_StubRun())
+    tracer = get_tracer()
+    try:
+        trace_url = tracer.get_trace_url()
+        if trace_url:
+            print(f"[trace] View trace → {trace_url}")
+        else:
+            print("[trace] No trace URL available")
+    except AttributeError:
+        print("[trace] Tracing not enabled")
 
     print("[Conclave] Phase-2 milestone demo complete")
 
@@ -62,4 +67,4 @@ if __name__ == "__main__":
 
     # spawn a single Technomancer just for cost logging
     tech = factory.spawn("Technomancer")
-    tech._finish_run(_StubRun())           # writes ledger line
+    # Note: _finish_run method doesn't exist, so we'll skip this for now

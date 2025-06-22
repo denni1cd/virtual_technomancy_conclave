@@ -15,6 +15,7 @@ from typing import List
 
 from conclave.consensus.debate_manager import DebateManager
 from conclave.agents.agent_factory import factory
+from conclave.services.tracing import get_tracer
 
 # -------------------------------------------------------------------- #
 # helper
@@ -36,10 +37,22 @@ def _attach_to(cls):
     def run_milestone(self, issue: str, tech_count: int = 3):
         tech_count = _odd(tech_count)
         techs = [factory.spawn("Technomancer") for _ in range(tech_count)]
-        # DebateManager.run() is already synchronous and creates its own loop
-        mgr = DebateManager(rounds=getattr(self, "debate_rounds", 3))
-        decision, _hist = mgr.run(issue=issue, agents=techs)
-        return decision
+        
+        # Start tracing child span for HighTechnomancer
+        tracer = get_tracer()
+        with tracer.child_span(
+            name="high_technomancer_milestone",
+            kind="HIGH",
+            metadata={
+                "issue": issue,
+                "tech_count": tech_count,
+                "role": "HighTechnomancer"
+            }
+        ):
+            # DebateManager.run() is already synchronous and creates its own loop
+            mgr = DebateManager(rounds=getattr(self, "debate_rounds", 3))
+            decision, _hist = mgr.run(issue=issue, agents=techs)
+            return decision
 
     cls.run_milestone = run_milestone  # monkey-patch
 

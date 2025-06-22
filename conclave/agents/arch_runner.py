@@ -6,6 +6,7 @@ from typing import List, Dict
 from conclave.agents.agent_factory import factory
 from conclave.services.cost_ledger import CostCapExceeded
 from conclave.consensus.debate_manager import DebateManager
+from conclave.services.tracing import get_tracer
 # ensure HighTechnomancer subclasses gain .run_milestone()
 import conclave.agents.high_behavior      # ← side-effect patch
 import time, shutil
@@ -58,19 +59,29 @@ class MilestoneRunner:
         milestone = self.milestones[self.idx]["goal"]
         print(f"[Arch] running milestone {self.idx}: {milestone}")
 
-        high = factory.spawn("HighTechnomancer")
-        try:
-            decision = high.run_milestone(issue=milestone, tech_count=3)
-            print(f"[Arch] High decision: {decision}")
+        # Start tracing root span for this milestone
+        tracer = get_tracer()
+        with tracer.root_span(
+            project_name=f"milestone_{self.idx}",
+            metadata={
+                "milestone_goal": milestone,
+                "milestone_index": self.idx,
+                "role": "ArchTechnomancer"
+            }
+        ):
+            high = factory.spawn("HighTechnomancer")
+            try:
+                decision = high.run_milestone(issue=milestone, tech_count=3)
+                print(f"[Arch] High decision: {decision}")
 
-            if not self._run_tests():
-                raise AssertionError("integration tests failed")
+                if not self._run_tests():
+                    raise AssertionError("integration tests failed")
 
-            self.idx += 1
-            return "passed"
+                self.idx += 1
+                return "passed"
 
-        except (CostCapExceeded, AssertionError) as exc:
-            print(f"[Arch] milestone failed: {exc}")
-            self._archive_fail()
-            # re-plan: inject lessons-learned into new High
-            return "failed"
+            except (CostCapExceeded, AssertionError) as exc:
+                print(f"[Arch] milestone failed: {exc}")
+                self._archive_fail()
+                # re-plan: inject lessons-learned into new High
+                return "failed"
