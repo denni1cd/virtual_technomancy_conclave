@@ -30,9 +30,17 @@ def main() -> None:
     print(f"[Conclave] bootstrapping for epic -> {epic!r}")    # -----------------------------------------------------
     # (A) ARCH kicks off parallel milestones via scheduler
     # -----------------------------------------------------
-    from conclave.agents.parallel_runner import ParallelScheduler
-    scheduler = ParallelScheduler("conclave/config/milestones.yaml")
-    scheduler.run_all()
+    print("[Conclave] Starting milestone execution...")
+    try:
+        from conclave.agents.parallel_runner import ParallelScheduler
+        scheduler = ParallelScheduler("conclave/config/milestones.yaml")
+        print("[Conclave] Created scheduler, running milestones...")
+        scheduler.run_all()
+        print("[Conclave] Milestone execution completed")
+    except Exception as e:
+        print(f"[Conclave] Error during milestone execution: {e}")
+        import traceback
+        traceback.print_exc()
 
     # -----------------------------------------------------
     # (B) Write a hello artefact so users still see a file

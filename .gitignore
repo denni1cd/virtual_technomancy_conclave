@@ -1,2 +1,40 @@
+# Environment files
 .env
 .env*
+
+# Generated auth and billing modules
+auth_module_*/
+billing_api_*/
+reporting_dashboard_*/
+user_profile_*/
+
+# Workspace and generated content
+workspace/
+failed/
+conclave_usage.jsonl
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test cache
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs
+*.log
