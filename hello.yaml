@@ -1,0 +1,3 @@
+- id: hello_world
+  goal: "Create a Python program that prints 'Hello, world!'"
+  dependencies: [] 

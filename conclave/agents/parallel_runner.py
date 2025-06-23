@@ -63,19 +63,25 @@ class ParallelScheduler:
     def run_all(self) -> None:
         """Execute the whole milestone graph (possibly in parallel)."""
         futures: dict[Future, str] = {}
+        print(f"[ParallelScheduler] Starting execution of {len(self.graph.nodes)} milestones")
 
         while self.graph.incomplete() or futures:
             # 1️⃣ enqueue each milestone whose dependencies are satisfied
-            for m in self.graph.ready_nodes():
+            ready = self.graph.ready_nodes()
+            print(f"[ParallelScheduler] Ready milestones: {[m['id'] for m in ready]}")
+            
+            for m in ready:
                 mid = m["id"]
                 if mid in self._scheduled:
                     continue
+                print(f"[ParallelScheduler] Scheduling milestone: {mid} - {m['goal']}")
                 fut = self.executor.submit(self._run_high, m)
                 futures[fut] = mid
                 self._scheduled.add(mid)
                 self.graph.mark_running(mid)
 
             if not futures:  # graph finished
+                print("[ParallelScheduler] No more milestones to schedule")
                 break
 
             # 2️⃣ wait until *one* future completes
@@ -86,18 +92,23 @@ class ParallelScheduler:
                 mid = futures.pop(fut)
                 try:
                     _mid, ok, ws = fut.result()
-                except Exception:
+                    print(f"[ParallelScheduler] Milestone {mid} completed: {'PASSED' if ok else 'FAILED'}")
+                except Exception as e:
+                    print(f"[ParallelScheduler] Milestone {mid} failed with exception: {e}")
                     ok, ws = False, None  # defensive: never crash loop
 
                 if ok and ws:
                     try:
                         self._merge(ws)
                         self.graph.mark_passed(mid)
-                    except RuntimeError:
+                        print(f"[ParallelScheduler] Milestone {mid} merged successfully")
+                    except RuntimeError as e:
+                        print(f"[ParallelScheduler] Milestone {mid} merge failed: {e}")
                         self.graph.mark_failed(mid)
                 else:
                     self.graph.mark_failed(mid)
 
+        print("[ParallelScheduler] All milestones completed")
         self.executor.shutdown(wait=True)
 
     # ------------------------------------------------------------------ #
@@ -105,12 +116,17 @@ class ParallelScheduler:
     # ------------------------------------------------------------------ #
     def _merge(self, sandbox: Path) -> None:
         """Copy files from sandbox → root workspace (sandbox wins)."""
+        # Files to exclude from merge (placeholders, etc.)
+        exclude_files = {"hello.txt", "test_placeholder.py", "__pycache__"}
+        
         for file in sandbox.rglob("*"):
             try:
                 rel = file.relative_to(sandbox)
             except ValueError:
                 continue
-            if "__pycache__" in rel.parts:
+            
+            # Skip excluded files and directories
+            if any(excluded in rel.parts for excluded in exclude_files):
                 continue
 
             dst = self.root_ws / rel
