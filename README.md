@@ -64,6 +64,21 @@ $ python -m conclave.demo_agentic_build \
 
 The live demo spawns the full Arch → High → Tech hierarchy, writes code to `workspace/`, runs pytest on it, and logs spend to `conclave_usage.jsonl`.
 
+## Repository Maintenance
+
+```bash
+# Clean up generated auth/billing modules and temporary files
+$ python cleanup_repo.py --dry-run    # See what would be removed
+$ python cleanup_repo.py --force      # Remove all generated content
+```
+
+The cleanup utility removes:
+- Generated auth/billing modules (`auth_module_*`, `billing_api_*`)
+- Usage logs (`conclave_usage.jsonl`)
+- Failed milestone archives (`failed/`)
+- Python cache files (`__pycache__/`)
+- Test cache (`.pytest_cache/`)
+
 ---
 
 ## Directory Layout
@@ -104,6 +119,8 @@ Caps live in `roles.yaml` and are enforced in runtime via the **cost ledger** (p
 * **Parallel Milestones** – DAG scheduler, per‑sandbox workspaces, merge + integration test
 * **Debate Consensus** – majority vote among odd Technomancer pool
 * **Cost Ledger** – JSONL ledger + portalocker lock, hard budget enforcement
+* **External Tracing** – LangSmith/Langfuse integration with PII redaction
+* **Repository Cleanup** – utility to remove generated modules and temporary files
 * **CLI & Demo Scripts** – one‑command prompt‑to‑program pipeline
 
 ---
@@ -127,9 +144,11 @@ Caps live in `roles.yaml` and are enforced in runtime via the **cost ledger** (p
 ## Upcoming (Phase 4 – Enhancements)
 
 * **T15‑b** – ContextVar & ledger read‑lock polish (PR #231)
-* **T16** – External tracing: LangSmith adapter, span tree, cost events
+* **T16** – External tracing: LangSmith adapter, span tree, cost events ✅ **Complete**
 * **T17** – Human‑in‑loop approval gates, git‑style merge conflicts
-* **T1x** – Multi‑host scheduler & autoscaling
+* **T18** – Multi‑host scheduler & autoscaling
+* **T19** – Advanced cost optimization & budget forecasting
+* **T20** – Production deployment & monitoring
 
 ---
 
